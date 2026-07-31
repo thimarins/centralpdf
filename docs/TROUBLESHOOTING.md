@@ -38,8 +38,8 @@ Sintomas:
 
 Ações:
 
-- **Não rode os comandos diretamente do caminho `\\vm-infra\Central PDF`**.
-- Mapeie o diretório para um drive local primeiro (ex: abra o prompt e rode `net use Z: "\\vm-infra\Central PDF"`).
+- **Não rode os comandos diretamente de um caminho de rede UNC** (algo como `\\SEU-SERVIDOR\Central PDF`).
+- Mapeie o diretório para um drive local primeiro (ex: abra o prompt e rode `net use Z: "\\SEU-SERVIDOR\Central PDF"`).
 - Acesse a unidade mapeada (`Z:`) e tente o comando novamente, ou clone para uma pasta local (ex: `%TEMP%`) para realizar o build e depois copie o resultado de volta.
 
 ### PDF corrompido ou não abre

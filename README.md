@@ -8,7 +8,7 @@ Para uma documentação completa do projeto, estrutura, processo de build e trou
 
 ## ⚠️ AVISO PARA NOVOS DESENVOLVEDORES
 
-Este projeto está atualmente hospedado em um **caminho de rede (`\\vm-infra\Central PDF`)**.
+Se este projeto estiver hospedado em um **caminho de rede** (algo como `\\SEU-SERVIDOR\Central PDF`), atenção ao ponto abaixo.
 
 Devido a limitações do `cmd.exe` do Windows, comandos como `npm install`, `npm run dev` ou `npm run build` podem falhar se executados diretamente a partir de um caminho UNC (que inicia com `\\`).
 
@@ -17,7 +17,7 @@ Por exemplo, mapeie a pasta como disco `Z:`:
 
 ```bash
 # Executar no Prompt de Comando / PowerShell
-net use Z: "\\vm-infra\Central PDF"
+net use Z: "\\SEU-SERVIDOR\Central PDF"
 
 # Depois acesse a unidade Z:
 Z:

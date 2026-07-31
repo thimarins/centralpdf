@@ -69,9 +69,9 @@ Versão atual de fechamento da V1: `1.5`.
 
 ## Execução Rápida e Restrições de UNC Path
 
-Atualmente o repositório deste projeto pode residir em um servidor de arquivos Windows (via caminho UNC, ex: `\\vm-infra\Central PDF`). Muitas ferramentas subjacentes (incluindo Node.js/npm e `cmd.exe`) **não suportam ou falham silenciosamente** ao rodar em caminhos UNC.
+Este projeto pode residir em um servidor de arquivos Windows (via caminho UNC, ex: `\\SEU-SERVIDOR\Central PDF`). Muitas ferramentas subjacentes (incluindo Node.js/npm e `cmd.exe`) **não suportam ou falham silenciosamente** ao rodar em caminhos UNC.
 
-**Sempre mapeie o caminho para um drive local (`net use Z: "\\vm-infra\Central PDF"`) ou faça clone localmente.**
+**Sempre mapeie o caminho para um drive local (`net use Z: "\\SEU-SERVIDOR\Central PDF"`) ou faça clone localmente.**
 
 Após mapear (ex: para `Z:`):
 

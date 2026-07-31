@@ -18,11 +18,11 @@ npm -v
 ```
 
 ### Problema Crítico com UNC Paths
-O script de build pode falhar com erros de localização se você estiver rodando diretamente via caminho UNC (`\\vm-infra\Central PDF`). Muitas ferramentas como o npm e o wix (usado pelo electron-builder) dão erro `ENOENT` porque o prompt de comando do Windows não suporta totalmente o UNC.
+O script de build pode falhar com erros de localização se você estiver rodando diretamente via caminho UNC (algo como `\\SEU-SERVIDOR\Central PDF`). Muitas ferramentas como o npm e o wix (usado pelo electron-builder) dão erro `ENOENT` porque o prompt de comando do Windows não suporta totalmente o UNC.
 
 **Sempre mapeie a rede antes de iniciar**:
 ```bash
-net use Z: "\\vm-infra\Central PDF"
+net use Z: "\\SEU-SERVIDOR\Central PDF"
 Z:
 cd \
 ```
