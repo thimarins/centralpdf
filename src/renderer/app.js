@@ -2889,6 +2889,7 @@ async function queueMerge() {
   }
 
   const filePaths = [];
+  const originalFileNames = [];
   const cleanupPaths = [];
   const mixedKinds = new Set();
 
@@ -2897,6 +2898,7 @@ async function queueMerge() {
       const prepared = await prepareMergeInputFile(item);
       if (!prepared?.path) continue;
       filePaths.push(prepared.path);
+      originalFileNames.push(item.name || "");
       cleanupPaths.push(...(prepared.cleanupPaths || []));
       mixedKinds.add(prepared.kind);
     }
@@ -2917,7 +2919,8 @@ async function queueMerge() {
     options: {
       outputName,
       zipResults: document.getElementById("merge-zip")?.checked ?? false,
-      cleanupPaths
+      cleanupPaths,
+      originalFileNames
     }
   });
 
@@ -2950,6 +2953,7 @@ async function queueSignature() {
     }
 
     payload.options.zipResults = document.getElementById("signature-zip")?.checked ?? false;
+    payload.options.originalFileNames = [state.signatureFile.name || ""];
     payload.files = [await resolveQueuedFilePath(state.signatureFile, "pdf")];
 
     if (state.signatureSealFile) {
@@ -3001,6 +3005,7 @@ async function queuePdfToWord() {
   }
 
   payload.options.zipResults = document.getElementById("pdf-to-word-zip")?.checked ?? false;
+  payload.options.originalFileNames = [state.pdfToWordFile.name || ""];
   payload.files = [await resolveQueuedFilePath(state.pdfToWordFile, "pdf")];
   const result = await queueOperation(payload);
   if (!result.success) {
@@ -3091,7 +3096,8 @@ async function queueImagesToPdf() {
     files: filePaths,
     options: {
       outputName,
-        zipResults: document.getElementById("images-pdf-zip")?.checked ?? false
+        zipResults: document.getElementById("images-pdf-zip")?.checked ?? false,
+        originalFileNames: state.imagePdfFiles.map((item) => item.name || "")
     }
   });
 
@@ -3137,6 +3143,7 @@ async function queueSplit() {
   }
 
   options.zipResults = document.getElementById("split-zip")?.checked ?? false;
+  options.originalFileNames = [state.selectedSplitFile.name || ""];
   const splitInputPath = await resolveQueuedFilePath(state.selectedSplitFile, "pdf");
   const result = await queueOperation({
     type,
@@ -3209,7 +3216,8 @@ async function queueCompress() {
         files: tempJpegs,
         options: {
           outputName,
-          zipResults: document.getElementById("compress-zip")?.checked ?? false
+          zipResults: document.getElementById("compress-zip")?.checked ?? false,
+          originalFileNames: [state.selectedCompressFile.name || ""]
         }
       });
 
@@ -3241,7 +3249,8 @@ async function queueCompress() {
       files: [compressInputPath],
       options: {
         outputName,
-        zipResults: document.getElementById("compress-zip")?.checked ?? false
+        zipResults: document.getElementById("compress-zip")?.checked ?? false,
+        originalFileNames: [state.selectedCompressFile.name || ""]
       }
     });
 
@@ -3311,7 +3320,8 @@ async function queueOrganize() {
         bookmarks,
         zipResults: document.getElementById("organize-zip")?.checked ?? false,
         numberPages: document.getElementById("organize-number-pages")?.checked ?? false,
-        cleanupPaths
+        cleanupPaths,
+        originalFileNames: organizeInputs.map((file) => file.name || "")
       }
     });
 
@@ -3336,6 +3346,7 @@ async function queueWatermark() {
   const payload = watermarkWorkspace.getQueuePayload();
   payload.options.zipResults = document.getElementById("watermark-zip")?.checked ?? false;
   payload.options.numberPages = document.getElementById("watermark-number-pages")?.checked ?? false;
+  payload.options.originalFileNames = (state.watermarkFiles || []).map((file) => file.name || "");
   payload.files = await Promise.all((state.watermarkFiles || []).map((file) => resolveQueuedFilePath(file, "pdf")));
   if (payload.options.watermarkKind === "image" && state.watermarkImageFile) {
     payload.options.imagePath = await resolveQueuedFilePath(state.watermarkImageFile, "png");
@@ -3450,6 +3461,7 @@ async function queueProtect() {
 
   const payload = protectWorkspace.getQueuePayload();
   payload.options.zipResults = document.getElementById("protect-zip")?.checked ?? false;
+  payload.options.originalFileNames = [state.protectFile.name || ""];
   payload.files = [await resolveQueuedFilePath(state.protectFile, "pdf")];
   const runBtn = document.getElementById("btn-run-protect");
     const originalText = runBtn?.innerHTML || "";
@@ -3500,6 +3512,7 @@ async function queueUnlock() {
   }
 
   payload.files = [unlockInputPath];
+  payload.options.originalFileNames = [state.unlockFile.name || ""];
   const runBtn = document.getElementById("btn-run-unlock");
   const originalText = runBtn?.innerHTML || "";
 
@@ -3562,7 +3575,8 @@ async function queueRedact() {
         outputName,
         redactedPages,
         zipResults: document.getElementById("redact-zip")?.checked ?? false,
-        cleanupPaths: [...new Set(state.redactTempPaths || [])]
+        cleanupPaths: [...new Set(state.redactTempPaths || [])],
+        originalFileNames: [state.redactFile.name || ""]
       }
     });
 

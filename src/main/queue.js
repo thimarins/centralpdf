@@ -109,10 +109,11 @@ class ProcessingQueue extends EventEmitter {
   }
 
   serializeTask(task) {
+    const originalFileNames = Array.isArray(task.originalFileNames) ? task.originalFileNames.filter(Boolean) : [];
     return {
       id: task.id,
       name: task.name,
-      fileNames: task.filePaths.map((p) => path.basename(p)),
+      fileNames: originalFileNames.length > 0 ? originalFileNames : task.filePaths.map((p) => path.basename(p)),
       progress: task.progress,
       itemProgress: task.itemProgress,
       totalItems: task.totalItems,
@@ -348,11 +349,12 @@ class ProcessingQueue extends EventEmitter {
   }
 
   publicTask(task) {
+    const originalFileNames = Array.isArray(task.originalFileNames) ? task.originalFileNames.filter(Boolean) : [];
     return {
       id: task.id,
       type: task.type || '',
       name: task.name,
-      fileNames: task.filePaths.map((p) => path.basename(p)) || task.fileNames || [],
+      fileNames: originalFileNames.length > 0 ? originalFileNames : task.filePaths.map((p) => path.basename(p)),
       quietNotifications: Boolean(task.quietNotifications),
       status: task.status,
       progress: task.progress || 0,

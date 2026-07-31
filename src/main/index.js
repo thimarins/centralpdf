@@ -885,6 +885,14 @@ function validateImageFile(filePath) {
   return inspection;
 }
 
+function resolvePrimaryFileName(originalFileNames, effectiveFiles) {
+  const candidate = Array.isArray(originalFileNames) ? originalFileNames[0] : '';
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return candidate.trim().slice(0, 255);
+  }
+  return path.basename(effectiveFiles[0] || '');
+}
+
 async function validateFiles(type, files) {
   if (!Array.isArray(files) || files.length === 0) {
     throw new Error('Selecione pelo menos um arquivo.');
@@ -1544,11 +1552,16 @@ ipcMain.handle('queue-operation', async (event, payload) => {
     const taskId = buildTaskId(type);
     const friendlyName = getFriendlyName(type);
     const taskDefinition = createTaskExecutor(type, effectiveFiles, options, outputDir);
+    const originalFileNames = Array.isArray(options.originalFileNames)
+      ? options.originalFileNames.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim().slice(0, 255))
+      : [];
+    const primaryFileName = resolvePrimaryFileName(originalFileNames, effectiveFiles);
 
     const enqueuedId = queue.enqueue({
       id: taskId,
       name: friendlyName,
       filePaths: effectiveFiles,
+      originalFileNames,
       quietNotifications: Boolean(options.quietNotifications),
       totalItems: taskDefinition.totalItems,
       createExecution: (updateProgress) => {
@@ -1568,7 +1581,7 @@ ipcMain.handle('queue-operation', async (event, payload) => {
               resultMemoryMb: result.memoryMb || 0,
               maxSupportedBytes: PDF_LIMITS.maxSupportedBytes
             });
-            configService.addHistoryEntry(friendlyName, path.basename(effectiveFiles[0]), 'sucesso', {
+            configService.addHistoryEntry(friendlyName, primaryFileName, 'sucesso', {
               outputPath: result.outputPath || result.firstOutputPath || '',
               outputDir: result.outputDir || ''
             });
@@ -1576,7 +1589,7 @@ ipcMain.handle('queue-operation', async (event, payload) => {
             await cleanUpTempFiles(effectiveFiles, options);
             return result;
           }).catch(async (error) => {
-            configService.addHistoryEntry(friendlyName, path.basename(effectiveFiles[0]), 'falha', {
+            configService.addHistoryEntry(friendlyName, primaryFileName, 'falha', {
               errorMessage: error.message || String(error)
             });
             logger.logError('OPERATION_FAILED', error);
