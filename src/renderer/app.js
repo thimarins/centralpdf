@@ -210,7 +210,6 @@ const queueAndHistory = createQueueAndHistoryRenderer({
   clearFeedbackBanner,
   clearToast: toastCenter.clear,
   showCustomConfirmModal,
-  getOperationLabel,
   updateRecentHistory: updateRecentHistoryFromTask,
   getWorkflowSuggestionActions
 });
