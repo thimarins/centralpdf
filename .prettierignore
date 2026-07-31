@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-installer/
+dist-installer-test/
+output/
+reports/
+.tmp-test-runs/
+releases/
+test-assets/generated/
+src/renderer/vendor/

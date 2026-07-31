@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-07-25T22:54:42.374Z",
+  "notes": [
+    "Large virtual PDFs are sparse files used for limit and warning validation.",
+    "protected-placeholder.pdf simulates a protected indicator but is not full encryption.",
+    "fake-renamed.pdf is a non-PDF file saved with a .pdf extension to validate rejection."
+  ],
+  "files": {
+    "smallPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\small.pdf",
+    "mediumPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\medium.pdf",
+    "manyPagesPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\many-pages.pdf",
+    "imageHeavyPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\image-heavy.pdf",
+    "corruptPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\corrupt.pdf",
+    "fakePdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\fake-renamed.pdf",
+    "signedIndicatorPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\signed-indicator.pdf",
+    "watermarkPng": "C:\\Projetos\\Central PDF\\test-assets\\generated\\watermark.png",
+    "watermarkJpg": "C:\\Projetos\\Central PDF\\test-assets\\generated\\watermark.jpg",
+    "watermarkSvg": "C:\\Projetos\\Central PDF\\test-assets\\generated\\watermark.svg",
+    "protectedPlaceholderPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\protected-placeholder.pdf",
+    "largeVirtualPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\large-virtual.pdf",
+    "hugeVirtualPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\huge-virtual.pdf",
+    "nearLimitVirtualPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\near-limit-virtual.pdf",
+    "oversizeVirtualPdf": "C:\\Projetos\\Central PDF\\test-assets\\generated\\oversize-virtual.pdf"
+  }
+}

@@ -1,0 +1,228 @@
+:root {
+  --bg-app: #f4f6fb;
+  --bg-sidebar: #162033;
+  --bg-card: #ffffff;
+  --bg-muted: #f6f8fc;
+  --bg-hover: #eef2f8;
+  --text-primary: #1b2434;
+  --text-secondary: #5d677b;
+  --text-tertiary: #8690a5;
+  --border-color: #e1e7f0;
+  --border-strong: #cfd8e6;
+  --accent-color: #5568ff;
+  --accent-hover: #4457ea;
+  --accent-soft: rgba(85, 104, 255, 0.14);
+  --danger-color: #b42318;
+  --danger-soft: rgba(180, 35, 24, 0.12);
+  --success-color: #4f9a57;
+  --success-soft: rgba(79, 154, 87, 0.14);
+  --warning-color: #9a6700;
+  --led-orange: #f27a1a;
+  --led-orange-glow: rgba(242, 122, 26, 0.16);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 18px 42px rgba(0, 0, 0, 0.14);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --sidebar-width: 244px;
+  --font-family-text: "Aptos", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  --font-family-display: "Aptos Display", "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  --transition-fast: 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-slow: 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.theme-dark {
+  --bg-app: #121826;
+  --bg-sidebar: #0d1422;
+  --bg-card: #1b2332;
+  --bg-muted: #141c2b;
+  --bg-hover: #222c3e;
+  --text-primary: #eef3ff;
+  --text-secondary: #b6c0d7;
+  --text-tertiary: #8792ab;
+  --border-color: #2b364c;
+  --border-strong: #36415b;
+  --accent-color: #7b88ff;
+  --accent-hover: #919cff;
+  --accent-soft: rgba(123, 136, 255, 0.2);
+  --danger-color: #ff9b8f;
+  --danger-soft: rgba(255, 155, 143, 0.18);
+  --success-color: #85c889;
+  --success-soft: rgba(133, 200, 137, 0.18);
+  --warning-color: #ffcf75;
+  --led-orange: #f08d49;
+  --led-orange-glow: rgba(240, 141, 73, 0.18);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 22px 48px rgba(0, 0, 0, 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  .theme-system {
+    --bg-app: #1f1f1f;
+    --bg-sidebar: #202020;
+    --bg-card: #2b2b2b;
+    --bg-muted: #242424;
+    --bg-hover: #313131;
+    --text-primary: #f5f5f5;
+    --text-secondary: #b8b8b8;
+    --text-tertiary: #909090;
+    --border-color: #3a3a3a;
+    --border-strong: #4a4a4a;
+    --accent-color: #3f6c93;
+    --accent-hover: #4b7ba4;
+    --accent-soft: rgba(63, 108, 147, 0.28);
+    --danger-color: #ff9b8f;
+    --danger-soft: rgba(255, 155, 143, 0.18);
+    --success-color: #85c889;
+    --success-soft: rgba(133, 200, 137, 0.18);
+    --warning-color: #ffcf75;
+    --led-orange: #f08d49;
+    --led-orange-glow: rgba(240, 141, 73, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+  .theme-system.theme-color-violet {
+    --violet-color: #9370db;
+    --violet-hover: #8a2be2;
+    --violet-soft: rgba(147,112,219,0.28);
+  }
+}
+
+body.theme-color-red {
+  --accent-color: var(--red-color, #c9302c);
+  --accent-hover: var(--red-hover, #ac2925);
+  --accent-soft: var(--red-soft, rgba(201,48,44,0.16));
+}
+
+body.theme-color-olive {
+  --accent-color: var(--olive-color, #6b8e23);
+  --accent-hover: var(--olive-hover, #556b2f);
+  --accent-soft: var(--olive-soft, rgba(107,142,35,0.16));
+}
+
+body.theme-color-violet {
+  --accent-color: var(--violet-color, #663399);
+  --accent-hover: var(--violet-hover, #4b0082);
+  --accent-soft: var(--violet-soft, rgba(102,51,153,0.16));
+}
+
+@media (prefers-color-scheme: dark) {
+  body.theme-system.theme-color-red {
+    --accent-color: var(--red-color, #d9534f);
+    --accent-hover: var(--red-hover, #c9302c);
+    --accent-soft: var(--red-soft, rgba(217,83,79,0.28));
+  }
+  body.theme-system.theme-color-olive {
+    --accent-color: var(--olive-color, #8fbc8f);
+    --accent-hover: var(--olive-hover, #6b8e23);
+    --accent-soft: var(--olive-soft, rgba(143,188,143,0.28));
+  }
+  body.theme-system.theme-color-violet {
+    --accent-color: var(--violet-color, #9370db);
+    --accent-hover: var(--violet-hover, #8a2be2);
+    --accent-soft: var(--violet-soft, rgba(147,112,219,0.28));
+  }
+}
+
+body.theme-dark.theme-color-red {
+  --accent-color: var(--red-color, #d9534f);
+  --accent-hover: var(--red-hover, #c9302c);
+  --accent-soft: var(--red-soft, rgba(217,83,79,0.28));
+}
+body.theme-dark.theme-color-olive {
+  --accent-color: var(--olive-color, #8fbc8f);
+  --accent-hover: var(--olive-hover, #6b8e23);
+  --accent-soft: var(--olive-soft, rgba(143,188,143,0.28));
+}
+body.theme-dark.theme-color-violet {
+  --accent-color: var(--violet-color, #9370db);
+  --accent-hover: var(--violet-hover, #8a2be2);
+  --accent-soft: var(--violet-soft, rgba(147,112,219,0.28));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family-text);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "kern" 1;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  font-family: var(--font-family-text);
+}
+
+button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type="color"] {
+  padding: 4px;
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  min-height: 16px;
+}
+
+

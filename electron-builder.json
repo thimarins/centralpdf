@@ -1,0 +1,56 @@
+{
+  "appId": "com.itsm.centralpdf",
+  "productName": "Central PDF",
+  "electronLanguages": [
+    "pt-BR",
+    "en-US"
+  ],
+  "directories": {
+    "output": "dist-installer"
+  },
+  "electronDist": "node_modules/electron/dist",
+  "files": [
+    "dist/**/*",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "package.json"
+  ],
+  "asar": true,
+  "asarUnpack": [
+    "**/*.node"
+  ],
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
+  "fileAssociations": [
+    {
+      "ext": "pdf",
+      "name": "PDF Document",
+      "description": "Documento PDF",
+      "role": "Editor"
+    }
+  ],
+  "win": {
+    "icon": "build/icon.ico",
+    "target": [
+      {
+        "target": "msi",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "msi": {
+    "oneClick": false,
+    "perMachine": true,
+    "createDesktopShortcut": true,
+    "runAfterFinish": false
+  },
+  "portable": {
+    "artifactName": "Central-PDF-Portable.exe",
+    "requestExecutionLevel": "user",
+    "unpackDirName": false
+  }
+}

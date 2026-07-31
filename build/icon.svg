@@ -1,0 +1,17 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <!-- Document body -->
+  <path d="M44 20 L178 20 L212 54 L212 236 Q212 244 204 244 L52 244 Q44 244 44 236 Z" fill="white" stroke="#173F72" stroke-width="9" stroke-linejoin="round"/>
+  <!-- Folded corner -->
+  <path d="M178 20 L178 54 L212 54" fill="#D5E0EE" stroke="#173F72" stroke-width="9" stroke-linejoin="round"/>
+  <!-- PDF text (centered, optically balanced) -->
+  <text x="128" y="168" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="92" font-weight="900" letter-spacing="-2" fill="#173F72">PDF</text>
+  <!-- Orange separator line -->
+  <line x1="56" y1="185" x2="200" y2="185" stroke="#E8661A" stroke-width="7" stroke-linecap="round"/>
+  <!-- Text lines -->
+  <line x1="58" y1="205" x2="128" y2="205" stroke="#173F72" stroke-width="6" stroke-linecap="round"/>
+  <line x1="58" y1="218" x2="118" y2="218" stroke="#173F72" stroke-width="6" stroke-linecap="round"/>
+  <line x1="58" y1="231" x2="108" y2="231" stroke="#173F72" stroke-width="6" stroke-linecap="round"/>
+  <!-- Folder icon -->
+  <path d="M138 198 L138 236 L202 236 L202 206 L168 206 L162 198 Z" fill="none" stroke="#173F72" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M138 206 L202 206" stroke="#173F72" stroke-width="6" stroke-linecap="round"/>
+</svg>

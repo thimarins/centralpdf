@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-installer/
+dist-installer-test/
+output/
+reports/
+.tmp-test-runs/
+test-assets/generated/
+releases/
+*.bak
+*.log

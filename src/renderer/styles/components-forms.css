@@ -1,0 +1,696 @@
+.anim-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* --- Shared Base Mock Document styles --- */
+.help-demo-card .doc-icon,
+.help-demo-card .merge-doc,
+.help-demo-card .split-source,
+.help-demo-card .split-target,
+.help-demo-card .sig-doc,
+.help-demo-card .word-source-pdf,
+.help-demo-card .word-target-doc,
+.help-demo-card .water-doc,
+.help-demo-card .comp-large,
+.help-demo-card .comp-small,
+.help-demo-card .lock-doc,
+.help-demo-card .redact-doc {
+  width: 65px;
+  height: 85px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 8px;
+  position: relative;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  overflow: hidden;
+  transition: all var(--transition-fast);
+}
+
+/* Mock lines of text */
+.help-demo-card .doc-icon::after,
+.help-demo-card .merge-doc::after,
+.help-demo-card .split-source::after,
+.help-demo-card .split-target::after,
+.help-demo-card .sig-doc::after,
+.help-demo-card .word-source-pdf::after,
+.help-demo-card .word-target-doc::after,
+.help-demo-card .water-doc::after,
+.help-demo-card .comp-large::after,
+.help-demo-card .comp-small::after,
+.help-demo-card .lock-doc::after,
+.help-demo-card .redact-doc::after {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--border-strong) 0px,
+    var(--border-strong) 3px,
+    transparent 3px,
+    transparent 8px
+  );
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* Red Document accent (PDF) */
+.help-demo-card .word-source-pdf::before,
+.help-demo-card .pdf-file-mock::before,
+.help-demo-card .split-source::before {
+  content: "PDF";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  background: linear-gradient(90deg, #ff4b5c, #d32f2f);
+  color: #fff;
+  font-size: 7px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+  border-bottom: 1.5px solid var(--border-strong);
+}
+
+/* Word Document accent (DOCX) */
+.help-demo-card .word-target-doc::before {
+  content: "DOCX";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  background: linear-gradient(90deg, #2b579a, #1e3a8a);
+  color: #fff;
+  font-size: 7px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+  border-bottom: 1.5px solid var(--border-strong);
+}
+
+/* Green/Secure Document accent */
+.help-demo-card .doc-icon.secure::before,
+.help-demo-card .lock-doc::before {
+  content: "SECURE";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  background: linear-gradient(90deg, #2ecc71, #27ae60);
+  color: #fff;
+  font-size: 6px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+  border-bottom: 1.5px solid var(--border-strong);
+}
+
+/* Generic Document header accent */
+.help-demo-card .doc-icon.shield::before,
+.help-demo-card .merge-doc::before,
+.help-demo-card .sig-doc::before,
+.help-demo-card .water-doc::before,
+.help-demo-card .comp-large::before,
+.help-demo-card .comp-small::before,
+.help-demo-card .redact-doc::before,
+.help-demo-card .split-target::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: var(--accent-color);
+  opacity: 0.8;
+  border-bottom: 1.5px solid var(--border-strong);
+}
+
+/* PDF Mock card inside Images-to-PDF */
+.help-demo-card .pdf-file-mock {
+  width: 65px;
+  height: 85px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 8px;
+  position: relative;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  animation: bounce-subtle 3s ease-in-out infinite;
+}
+.help-demo-card .pdf-file-mock::after {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--border-strong) 0px,
+    var(--border-strong) 3px,
+    transparent 3px,
+    transparent 8px
+  );
+  opacity: 0.75;
+}
+
+/* ── 1. Geral & Segurança ── */
+.anim-general {
+  gap: 30px;
+}
+.anim-general .doc-icon.shield {
+  animation: pulse-border 2.5s infinite;
+}
+.anim-general .doc-icon.shield::after {
+  content: "OFF";
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  position: absolute;
+  inset: 0;
+  top: 14px;
+}
+.anim-general .encryption-dots {
+  width: 80px;
+  height: 20px;
+  background: radial-gradient(circle, var(--accent-color) 2px, transparent 3px);
+  background-size: 16px 20px;
+  animation: scroll-dots 1.5s linear infinite;
+}
+.anim-general .doc-icon.secure {
+  animation: secure-glow 2.5s infinite;
+}
+.anim-general .doc-icon.secure::after {
+  content: "✅";
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  position: absolute;
+  inset: 0;
+  top: 14px;
+}
+
+@keyframes scroll-dots {
+  from { background-position-x: 0px; }
+  to { background-position-x: 80px; }
+}
+@keyframes secure-glow {
+  0%, 100% { box-shadow: var(--shadow-md); }
+  50% { box-shadow: 0 0 20px var(--success-soft), 0 0 2px var(--success-color); border-color: var(--success-color); }
+}
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--border-strong); }
+  50% { border-color: var(--accent-color); box-shadow: 0 0 14px var(--accent-soft); }
+}
+
+/* ── 2. Converter arquivos para PDF ── */
+.anim-images-pdf .img-preview-mock {
+  width: 55px;
+  height: 55px;
+  position: relative;
+  transform: rotate(-10deg);
+  animation: slide-images 3s ease-in-out infinite;
+}
+.anim-images-pdf .img-preview-mock::before,
+.anim-images-pdf .img-preview-mock::after {
+  content: "";
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 6px;
+  border: 2px solid var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+.anim-images-pdf .img-preview-mock::before {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+  transform: rotate(-5deg) translate(-10px, -6px);
+  z-index: 2;
+}
+.anim-images-pdf .img-preview-mock::after {
+  background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+  transform: rotate(8deg) translate(10px, 6px);
+  z-index: 1;
+}
+.anim-images-pdf .arrow-trans {
+  font-size: 1.8rem;
+  color: var(--accent-color);
+  animation: arrow-pulse 1.5s infinite;
+}
+.anim-images-pdf .arrow-trans::before {
+  content: "➔";
+}
+
+@keyframes slide-images {
+  0%, 100% { transform: scale(1) rotate(-10deg) translateX(-10px); }
+  50% { transform: scale(0.9) rotate(-5deg) translateX(5px); }
+}
+@keyframes arrow-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.15) translateX(4px); opacity: 1; }
+}
+
+/* ── 3. Mesclar ── */
+.anim-merge {
+  position: relative;
+  width: 100%;
+}
+.anim-merge .merge-doc.doc1 {
+  animation: merge-slide-left 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  z-index: 10;
+}
+.anim-merge .merge-doc.doc2 {
+  animation: merge-slide-right 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  z-index: 9;
+}
+.anim-merge .merge-arrow {
+  font-size: 1.8rem;
+  color: var(--accent-color);
+  z-index: 5;
+  animation: arrow-pulse 1.5s infinite;
+}
+.anim-merge .merge-arrow::before {
+  content: "➔";
+}
+.anim-merge .merge-doc.merged-doc {
+  animation: merge-reveal 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  z-index: 8;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 16px var(--accent-soft);
+}
+.anim-merge .merge-doc.merged-doc::before {
+  content: "MERGED";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 6px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+}
+
+@keyframes merge-slide-left {
+  0% { transform: translate(-80px, -22px) scale(0.95); opacity: 1; }
+  35%, 100% { transform: translate(0px, 0px) scale(0.7); opacity: 0; }
+}
+@keyframes merge-slide-right {
+  0% { transform: translate(-80px, 22px) scale(0.95); opacity: 1; }
+  35%, 100% { transform: translate(0px, 0px) scale(0.7); opacity: 0; }
+}
+@keyframes merge-reveal {
+  0%, 35% { opacity: 0; transform: scale(0.5) translateX(60px); }
+  50%, 90% { opacity: 1; transform: scale(1.1) translateX(60px); }
+  100% { opacity: 0; transform: scale(1) translateX(60px); }
+}
+
+/* ── 4. Separar PDFs ── */
+.anim-split {
+  gap: 30px;
+}
+.anim-split .split-source {
+  animation: split-source-fade-new 3.5s ease-in-out infinite;
+}
+.anim-split .split-scissors {
+  font-size: 1.8rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  pointer-events: none;
+  animation: split-scissors-snip 3.5s ease-in-out infinite;
+}
+.anim-split .split-scissors::before {
+  content: "✂️";
+}
+.anim-split .split-target.t1 {
+  animation: split-out-left 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+.anim-split .split-target.t2 {
+  animation: split-out-right 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+@keyframes split-source-fade-new {
+  0%, 20% { opacity: 1; transform: scale(1) translateX(-50px); }
+  35%, 80% { opacity: 0.15; transform: scale(0.9) translateX(-50px); }
+  100% { opacity: 1; transform: scale(1) translateX(-50px); }
+}
+@keyframes split-scissors-snip {
+  0% { transform: translate(-50px, -45px) rotate(0deg); opacity: 0; }
+  15%, 20% { transform: translate(-50px, -45px) rotate(0deg); opacity: 1; }
+  30% { transform: translate(-50px, 45px) rotate(-15deg); opacity: 1; }
+  40%, 100% { transform: translate(50px, 45px) rotate(0deg); opacity: 0; }
+}
+@keyframes split-out-left {
+  0%, 30% { opacity: 0; transform: translate(-10px, -15px) scale(0.7); }
+  50%, 85% { opacity: 1; transform: translate(30px, -25px) scale(1); }
+  100% { opacity: 0; transform: translate(50px, -25px) scale(0.8); }
+}
+@keyframes split-out-right {
+  0%, 30% { opacity: 0; transform: translate(-10px, 15px) scale(0.7); }
+  50%, 85% { opacity: 1; transform: translate(30px, 25px) scale(1); }
+  100% { opacity: 0; transform: translate(50px, 25px) scale(0.8); }
+}
+
+/* ── 5. Assinar PDF ── */
+.anim-signature {
+  position: relative;
+}
+.anim-signature .sig-doc {
+  animation: bounce-subtle 3s ease-in-out infinite;
+}
+.anim-signature .sig-doc::before {
+  content: "";
+  position: absolute;
+  bottom: 20px;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  border-bottom: 1.5px dashed var(--accent-color);
+  opacity: 0.5;
+}
+.anim-signature .sig-doc::after {
+  content: "Thiago R.";
+  font-family: 'Caveat', 'Brush Script MT', cursive, sans-serif;
+  font-size: 11px;
+  color: #1e3a8a;
+  font-weight: 700;
+  position: absolute;
+  bottom: 22px;
+  left: 14px;
+  white-space: nowrap;
+  animation: signature-write 4s steps(40) infinite;
+  overflow: hidden;
+  background: var(--bg-card);
+  height: 15px;
+}
+.theme-dark .anim-signature .sig-doc::after {
+  color: #7b88ff;
+  background: var(--bg-card);
+}
+.anim-signature .sig-hand {
+  position: absolute;
+  font-size: 1.6rem;
+  z-index: 10;
+  animation: signature-hand-move 4s ease-in-out infinite;
+  pointer-events: none;
+}
+.anim-signature .sig-hand::before {
+  content: "✍️";
+}
+
+@keyframes signature-write {
+  0%, 15% { width: 0; }
+  65%, 90% { width: 45px; }
+  100% { width: 0; }
+}
+@keyframes signature-hand-move {
+  0% { transform: translate(25px, 35px); opacity: 0; }
+  15% { transform: translate(-15px, 22px); opacity: 1; }
+  65% { transform: translate(25px, 22px); opacity: 1; }
+  75%, 100% { transform: translate(35px, 35px); opacity: 0; }
+}
+
+/* ── 6. PDF para Word ── */
+.anim-word {
+  perspective: 1000px;
+}
+.anim-word .word-source-pdf {
+  animation: word-flip-pdf 4s ease-in-out infinite;
+  backface-visibility: hidden;
+}
+.anim-word .word-target-doc {
+  position: absolute;
+  animation: word-flip-doc 4s ease-in-out infinite;
+  backface-visibility: hidden;
+}
+.anim-word .arrow-spin {
+  font-size: 1.6rem;
+  color: var(--accent-color);
+  animation: spin-slow 4s linear infinite;
+  z-index: 5;
+}
+.anim-word .arrow-spin::before {
+  content: "⚡";
+}
+
+@keyframes word-flip-pdf {
+  0%, 45% { transform: rotateY(0deg); opacity: 1; z-index: 2; }
+  50%, 95% { transform: rotateY(180deg); opacity: 0; z-index: 1; }
+  100% { transform: rotateY(360deg); opacity: 1; z-index: 2; }
+}
+@keyframes word-flip-doc {
+  0%, 45% { transform: rotateY(-180deg); opacity: 0; z-index: 1; }
+  50%, 95% { transform: rotateY(0deg); opacity: 1; z-index: 2; }
+  100% { transform: rotateY(180deg); opacity: 0; z-index: 1; }
+}
+@keyframes spin-slow {
+  0% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.2) rotate(180deg); filter: drop-shadow(0 0 8px var(--accent-color)); }
+  100% { transform: scale(1) rotate(360deg); }
+}
+
+/* ── 7. Organizar Páginas ── */
+.anim-organize {
+  gap: 15px;
+}
+.anim-organize .org-card {
+  width: 50px;
+  height: 65px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  color: var(--text-secondary);
+}
+.anim-organize .org-card.c1 {
+  animation: organize-c1 3.5s ease-in-out infinite;
+}
+.anim-organize .org-card.c2 {
+  animation: organize-c2 3.5s ease-in-out infinite;
+}
+.anim-organize .org-card.c3 {
+  background: var(--accent-soft);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  animation: organize-c3 3.5s ease-in-out infinite;
+}
+
+@keyframes organize-c1 {
+  0%, 15% { transform: translateX(0); }
+  45%, 85% { transform: translateX(65px); }
+  100% { transform: translateX(0); }
+}
+@keyframes organize-c2 {
+  0%, 15% { transform: translateX(0); }
+  45%, 85% { transform: translateX(65px); }
+  100% { transform: translateX(0); }
+}
+@keyframes organize-c3 {
+  0%, 15% { transform: translate(0, 0) scale(1); box-shadow: var(--shadow-sm); }
+  30% { transform: translate(-65px, -20px) scale(1.15); box-shadow: var(--shadow-lg); }
+  45%, 85% { transform: translate(-130px, 0) scale(1); box-shadow: var(--shadow-sm); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* ── 8. Marca d'água ── */
+.anim-watermark .water-doc {
+  animation: bounce-subtle 3s ease-in-out infinite;
+}
+.anim-watermark .water-stamp {
+  position: absolute;
+  font-size: 8px;
+  font-weight: 900;
+  color: var(--danger-color);
+  border: 1.5px solid var(--danger-color);
+  padding: 2px 4px;
+  border-radius: 3px;
+  transform: rotate(-25deg);
+  letter-spacing: 0.5px;
+  z-index: 10;
+  pointer-events: none;
+  animation: watermark-stamp-action 3s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite;
+}
+
+@keyframes watermark-stamp-action {
+  0% { transform: scale(3) rotate(-45deg); opacity: 0; filter: blur(4px); }
+  25% { transform: scale(1) rotate(-25deg); opacity: 0.75; filter: blur(0); }
+  85%, 100% { transform: scale(1) rotate(-25deg); opacity: 0.75; filter: blur(0); }
+}
+
+/* ── 9. Comprimir PDF ── */
+.anim-compress {
+  gap: 15px;
+}
+.anim-compress .comp-large {
+  animation: compress-doc-shrink 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+.anim-compress .comp-large::after {
+  content: "4.8 MB";
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--text-tertiary);
+  text-align: center;
+  background: transparent;
+}
+.anim-compress .comp-scale {
+  font-size: 1.5rem;
+  color: var(--accent-color);
+  animation: bounce-subtle 1.5s infinite;
+}
+.anim-compress .comp-scale::before {
+  content: "➔";
+}
+.anim-compress .comp-small {
+  animation: compress-doc-reveal 3.5s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+.anim-compress .comp-small::after {
+  content: "1.2 MB";
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--success-color);
+  text-align: center;
+}
+
+@keyframes compress-doc-shrink {
+  0% { transform: scale(1); opacity: 1; }
+  35%, 100% { transform: scale(0.6); opacity: 0.1; }
+}
+@keyframes compress-doc-reveal {
+  0%, 30% { transform: scale(0.5); opacity: 0; }
+  50%, 85% { transform: scale(0.75); opacity: 1; box-shadow: 0 0 12px var(--success-soft); border-color: var(--success-color); }
+  100% { transform: scale(0.5); opacity: 0; }
+}
+
+/* ── 10. Proteger PDF ── */
+.anim-protect {
+  gap: 20px;
+}
+.anim-protect .lock-doc {
+  animation: bounce-subtle 3s ease-in-out infinite;
+}
+.anim-protect .lock-key {
+  font-size: 1.8rem;
+  position: absolute;
+  animation: protect-key-in 3.5s ease-in-out infinite;
+  z-index: 12;
+}
+.anim-protect .lock-key::before {
+  content: "KEY";
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.anim-protect .lock-padlock {
+  position: absolute;
+  font-size: 2rem;
+  z-index: 15;
+  animation: protect-lock-snap 3.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite;
+}
+.anim-protect .lock-padlock::before {
+  content: "LOCK";
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.anim-protect .lock-padlock::after {
+  display: none !important;
+}
+
+@keyframes protect-key-in {
+  0% { transform: translate(-60px, 40px) scale(0.8); opacity: 0; }
+  20%, 40% { transform: translate(-30px, 0px) scale(1) rotate(15deg); opacity: 1; }
+  50%, 100% { transform: translate(-60px, 40px) scale(0.8); opacity: 0; }
+}
+@keyframes protect-lock-snap {
+  0%, 35% { transform: translate(40px, -40px) scale(0.5); opacity: 0; }
+  50%, 85% { transform: translate(0, 0) scale(1); opacity: 1; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25)); }
+  100% { transform: translate(40px, -40px) scale(0.5); opacity: 0; }
+}
+
+/* ── 11. Ocultar Dados (Tarja Preta) ── */
+.anim-redact .redact-doc {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 16px 6px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-sizing: border-box;
+}
+.anim-redact .redact-line {
+  font-family: monospace;
+  font-size: 4.8px;
+  color: var(--text-secondary);
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+.anim-redact .redact-mask {
+  position: absolute;
+  left: 21px;
+  top: 27px;
+  width: 38px;
+  height: 7px;
+  background: #000;
+  border-radius: 1px;
+  transform-origin: left center;
+  animation: redact-mask-wipe 3s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  z-index: 10;
+}
+
+@keyframes redact-mask-wipe {
+  0% { transform: scaleX(0); opacity: 0; }
+  25%, 85% { transform: scaleX(1); opacity: 1; box-shadow: 0 0 4px #000; }
+  100% { transform: scaleX(0); opacity: 0; }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
