@@ -16,7 +16,7 @@ export const WATERMARK_DEFAULTS = {
   textColor: "#6e6e6e",
   textSize: 76,
   position: "diagonal",
-  opacity: 15,
+  opacity: 18,
   rotation: 35,
   scale: 100,
   fontFamily: "Calibri",

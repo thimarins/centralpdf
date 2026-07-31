@@ -69,7 +69,7 @@ export function createWatermarkWorkspaceController(deps) {
       || values.fontSize !== WATERMARK_DEFAULTS.textSize
       || String(values.color || "").toLowerCase() !== WATERMARK_DEFAULTS.textColor.toLowerCase()
       || values.position !== WATERMARK_DEFAULTS.position
-      || values.opacity !== 18 // Matching HTML default
+      || values.opacity !== WATERMARK_DEFAULTS.opacity
       || values.rotation !== WATERMARK_DEFAULTS.rotation
       || values.scale !== WATERMARK_DEFAULTS.scale
       || (document.getElementById("watermark-output-suffix")?.value?.trim() || "") !== WATERMARK_DEFAULTS.outputSuffix;
