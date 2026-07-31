@@ -123,6 +123,71 @@ Recomendação prática:
 - validar com PDFs reais antes da distribuição
 - priorizar segurança e estabilidade, não volume de mudança
 
+## Rollback (reverter uma versão com problema)
+
+Se uma versão distribuída apresentar um bug crítico (perda de dados, crash
+recorrente, falha de segurança), o procedimento é reinstalar a última versão
+estável conhecida — não existe atualização automática que reverta sozinha.
+
+### 1. Identificar a última versão estável
+
+- Verificar `docs/CHANGELOG.md` para saber qual versão anterior foi validada
+  em produção sem incidentes.
+- Confirmar que os artefatos dessa versão ainda existem em
+  `releases/<versão-anterior>/` (por isso a boa prática de nunca apagar
+  releases antigas — ver "Boas Práticas" acima).
+
+Se os artefatos da versão anterior **não** existirem mais localmente (ex.:
+pasta `releases/<versão-anterior>/` foi removida), é necessário rebuildar
+essa versão a partir da tag/commit correspondente no Git:
+
+```bash
+git checkout <tag-ou-commit-da-versao-anterior>
+npm ci
+npm run build:win
+git checkout main
+```
+
+### 2. Desinstalar a versão com problema
+
+Via MSI (instalação corporativa):
+
+```powershell
+msiexec /x "Central PDF <versão-com-problema>.msi" /quiet /norestart
+```
+
+Ou, se o MSI original não estiver mais disponível, remover pelo Painel de
+Controle / `Apps e recursos` do Windows.
+
+Para instalação Portable, basta descartar a pasta/execução atual — não há
+estado de instalação para desfazer.
+
+### 3. Reinstalar a versão anterior estável
+
+```powershell
+msiexec /i "Central PDF <versão-anterior>.msi" /quiet /norestart
+```
+
+### 4. Redistribuir via GPO/Intune
+
+- Apontar o pacote publicado no GPO/Intune de volta para o MSI da versão
+  anterior.
+- Manter a versão com problema fora de qualquer política de distribuição
+  ativa até a correção ser validada.
+
+### 5. Registrar o incidente
+
+- Adicionar uma entrada em `docs/CHANGELOG.md` documentando: qual versão foi
+  revertida, o motivo (resumo do bug), e a versão para a qual se reverteu.
+- Isso evita que a mesma versão problemática seja redistribuída por engano
+  no futuro.
+
+### Retenção mínima recomendada
+
+Para que o rollback acima seja sempre possível, mantenha em `releases/` os
+artefatos de, no mínimo, as **duas últimas versões estáveis** distribuídas
+em produção — não apenas a `latest`.
+
 ## Observação sobre `win-unpacked`
 
 O projeto não depende mais de publicar `win-unpacked` como parte do fluxo operacional.

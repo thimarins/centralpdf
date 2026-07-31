@@ -1,4 +1,5 @@
 ﻿import { WATERMARK_DEFAULTS } from "../constants.js";
+import { normalizeBinaryData, clamp } from "../pdf-preview-utils.js";
 
 const WATERMARK_PRESETS = {
   CONFIDENCIAL: { text: "CONFIDENCIAL", color: "#6e6e6e", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 },
@@ -6,20 +7,6 @@ const WATERMARK_PRESETS = {
   RASCUNHO: { text: "RASCUNHO", color: "#9a6700", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 },
   COPIA: { text: "COPIA", color: "#5b5fc7", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 }
 };
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeBinaryData(data) {
-  if (data instanceof Uint8Array) return data;
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (Array.isArray(data)) return new Uint8Array(data);
-  if (data?.buffer instanceof ArrayBuffer) {
-    return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.buffer.byteLength);
-  }
-  return new Uint8Array();
-}
 
 function mapPreviewFontFamily(fontFamily) {
   if (fontFamily === "Calibri") return '700 32px Calibri, Candara, Segoe, sans-serif';

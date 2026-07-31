@@ -1,3 +1,5 @@
+import { normalizeBinaryData, clamp } from '../pdf-preview-utils.js';
+
 const SIGNATURE_FIELD_DEFAULTS = {
   signature: { widthRatio: 0.3, heightRatio: 0.08, color: '#000000', fontFamily: 'SegoeScript', opacity: 100, rotation: 0 },
   drawn: { widthRatio: 0.32, heightRatio: 0.11, color: '#000000', fontFamily: 'SegoeScript', opacity: 100, rotation: 0 },
@@ -17,10 +19,6 @@ const SIGNATURE_FONT_STACKS = {
   CorporateSerif: 'Georgia, "Times New Roman", serif',
   Monospace: 'Consolas, "Courier New", monospace'
 };
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 
 function formatDisplayDate(value) {
   if (!value) return new Date().toLocaleDateString('pt-BR');
@@ -610,16 +608,6 @@ export function createSignatureWorkspaceController(deps) {
 
     renderSelectedFieldInspector();
   }
-
-function normalizeBinaryData(data) {
-  if (data instanceof Uint8Array) return data;
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (Array.isArray(data)) return new Uint8Array(data);
-  if (data?.buffer instanceof ArrayBuffer) {
-    return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.buffer.byteLength);
-  }
-  return new Uint8Array();
-}
 
   async function renderCurrentPage() {
     const pdfDoc = state.signaturePdfDoc;
