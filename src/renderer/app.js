@@ -1451,7 +1451,8 @@ function repairVisibleMojibake(root = document.body) {
   async function loadAppMeta() {
     try {
       state.appMeta = await window.api.getAppMeta();
-      const versionText = `Central PDF • ${state.appMeta?.releaseVersion || "1.0.3"}`;
+      const versionText = state.appMeta?.releaseVersion ? `Central PDF • ${state.appMeta.releaseVersion}` : "Central PDF";
+      document.title = versionText;
     const appVersionBadge = document.getElementById("app-version-badge");
     const settingAppVersion = document.getElementById("setting-app-version");
     if (appVersionBadge) {

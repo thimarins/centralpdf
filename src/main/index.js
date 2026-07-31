@@ -594,7 +594,7 @@ function buildRendererE2EScript({ manifest }) {
         await queuePayload(api.protectWorkspace.getQueuePayload());
         const task = await ensureCompleted('protect');
         protectedOutputPath = task.result.outputPath || task.result.firstOutputPath || '';
-        if (!protectedOutputPath) throw new Error('Sa?da protegida ausente');
+        if (!protectedOutputPath) throw new Error('Saída protegida ausente');
         return protectedOutputPath;
       });
 
@@ -807,7 +807,7 @@ function getAboutInfo() {
       { name: 'Logging interno', description: 'Logs rotativos e diagnóstico local sanitizado.' }
     ],
     safeguards: {
-      offlineMessage: 'Central PDF foi desenvolvido para processamento seguro e local de documentos PDF em ambientes corporativos. Nenhum arquivo ? enviado para internet. Convers?es para Word priorizam PDFs digitais e n?o incluem OCR.',
+      offlineMessage: 'Central PDF foi desenvolvido para processamento seguro e local de documentos PDF em ambientes corporativos. Nenhum arquivo é enviado para internet. Conversões para Word priorizam PDFs digitais e não incluem OCR.',
       maxFileSizeBytes: config.maxFileSizeLimit
     }
   };
@@ -956,7 +956,7 @@ async function validateFiles(type, files) {
 
 function validateOrganizeOptions(options = {}) {
   if (!Array.isArray(options.pageActions) || options.pageActions.length === 0) {
-    throw new Error('A organiza??o precisa de pelo menos uma p?gina.');
+    throw new Error('A organização precisa de pelo menos uma página.');
   }
   if (typeof options.outputName !== 'string' || !options.outputName.trim()) {
     throw new Error('Informe o nome do arquivo final.');

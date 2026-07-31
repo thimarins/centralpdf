@@ -853,7 +853,7 @@ export function createSignatureWorkspaceController(deps) {
       try {
         await renderCurrentPage();
       } catch (error) {
-        notify({ tone: 'error', title: 'Assinar PDF', message: error.message || 'NÃ£o foi possÃ­vel atualizar o preview.', important: true });
+        notify({ tone: 'error', title: 'Assinar PDF', message: error.message || 'Não foi possível atualizar o preview.', important: true });
       }
     };
 
