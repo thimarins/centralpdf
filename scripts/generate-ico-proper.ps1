@@ -5,6 +5,11 @@ $sourcePng = Join-Path $scriptDir "..\build\icon.png"
 $outputIco = Join-Path $scriptDir "..\build\icon.ico"
 $outputPng = Join-Path $scriptDir "..\build\icon.png"
 
+if (-not (Test-Path -LiteralPath $sourcePng)) {
+    Write-Error "PNG fonte nao encontrado em: $sourcePng"
+    exit 1
+}
+
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
 $sourceImg = [System.Drawing.Image]::FromFile($sourcePng)
 

@@ -1,4 +1,4 @@
-﻿import { normalizeBinaryData } from '../pdf-preview-utils.js';
+﻿import { normalizeBinaryData, downsampleImageAsBase64 as downsampleImageAsBase64Shared } from '../pdf-preview-utils.js';
 
 export function createOrganizeWorkspaceController(deps) {
   const {
@@ -47,44 +47,7 @@ export function createOrganizeWorkspaceController(deps) {
   }
 
   async function downsampleImageAsBase64(fileObject, maxDimension = 2200, quality = 0.82) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const image = new Image();
-        image.onload = () => {
-          let width = image.width;
-          let height = image.height;
-          if (width > maxDimension || height > maxDimension) {
-            if (width > height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const context = canvas.getContext('2d');
-          if (!context) {
-            reject(new Error('Não foi possível preparar a imagem para organização.'));
-            return;
-          }
-          context.fillStyle = '#ffffff';
-          context.fillRect(0, 0, width, height);
-          context.drawImage(image, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
-          const commaIndex = dataUrl.indexOf(',');
-          resolve(commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl);
-        };
-        image.onerror = (error) => reject(error);
-        image.src = String(event.target?.result || '');
-      };
-      reader.onerror = (error) => reject(error);
-      reader.readAsDataURL(fileObject);
-    });
+    return downsampleImageAsBase64Shared(fileObject, maxDimension, quality, 'Não foi possível preparar a imagem para organização.');
   }
 
   async function ensureTempImagePath(file) {
@@ -1660,11 +1623,24 @@ export function createOrganizeWorkspaceController(deps) {
         isProtectedEl.style.color = 'var(--text-secondary)';
 
         modalDetails.classList.remove('hidden');
+        window.setTimeout(() => modalDetailsClose.focus({ preventScroll: true }), 0);
       };
 
-      modalDetailsClose.onclick = () => {
+      const closeDetailsModal = () => {
         modalDetails.classList.add('hidden');
+        btnShowDetails.focus({ preventScroll: true });
       };
+
+      modalDetailsClose.onclick = closeDetailsModal;
+      modalDetails.addEventListener('click', (event) => {
+        if (event.target === modalDetails) closeDetailsModal();
+      });
+      modalDetails.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeDetailsModal();
+        }
+      });
     }
 
     const btnExtract = document.getElementById('btn-organize-extract-selected');

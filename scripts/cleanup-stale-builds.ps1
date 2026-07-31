@@ -1,10 +1,15 @@
 $ErrorActionPreference = "Stop"
 
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+
 $targets = @(
-  "C:\Projetos\Central PDF\dist-installer\win-unpacked",
-  "C:\Projetos\Central PDF\dist-installer-build-20260519-201159",
-  "C:\Projetos\Central PDF\dist-installer-temp"
+  (Join-Path $repoRoot "dist-installer\win-unpacked"),
+  (Join-Path $repoRoot "dist-installer-temp")
 )
+
+# Any leftover timestamped staging folder from a previous build run
+$targets += Get-ChildItem -LiteralPath $repoRoot -Directory -Filter "dist-installer-build-*" -ErrorAction SilentlyContinue |
+  ForEach-Object { $_.FullName }
 
 foreach ($target in $targets) {
   if (-not (Test-Path -LiteralPath $target)) {

@@ -52,10 +52,7 @@ async function runBuildCheck(options = {}) {
       };
       copyDir(path.join(ROOT, 'src'), path.join(tempBuildDir, 'src'));
       
-      let targetNodeModules = 'C:\\Projetos\\Central PDF\\node_modules';
-      if (!fs.existsSync(targetNodeModules)) {
-        targetNodeModules = path.join(ROOT, 'node_modules');
-      }
+      const targetNodeModules = path.join(ROOT, 'node_modules');
       const tempNodeModules = path.join(tempBuildDir, 'node_modules');
       execSync(`cmd.exe /c mklink /J "${tempNodeModules}" "${targetNodeModules}"`, { stdio: 'ignore' });
       
