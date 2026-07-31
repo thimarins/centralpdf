@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Este documento descreve o processo de build local e geração dos pacotes Windows do Central PDF `1.5`.
+Este documento descreve o processo de build local e geração dos pacotes Windows do Central PDF. Os exemplos abaixo usam a versão `1.2.0` como referência; substitua pela versão atual em `package.json`.
 
 ## Pré-requisitos
 
@@ -85,34 +85,34 @@ npm run build:win
 - executa `electron-builder`
 - usa staging externo em `%TEMP%` para evitar lock no workspace
 - publica artefatos atuais em `dist-installer/`
-- publica release versionada em `releases/1.5/`
+- publica release versionada em `releases/1.2.0/`
 - publica alias estável em `releases/latest/`
 
 ## Artefatos Gerados
 
 ### `dist-installer/`
 
-- `Central PDF 1.5.msi`
-- `Central-PDF-Portable-1.5.exe`
+- `Central PDF 1.2.0.msi`
+- `Central-PDF-Portable-1.2.0.exe`
 
-### `releases/1.5/`
+### `releases/1.2.0/`
 
-- `PDF-Next-1.5-win-x64.msi`
-- `PDF-Next-1.5-win-x64-portable.exe`
-- `PDF-Next-win-x64-unpacked/`
+- `Central-PDF-1.2.0-win-x64.msi`
+- `Central-PDF-1.2.0-win-x64-portable.exe`
+- `Central-PDF-win-x64-unpacked/`
 - `RELEASE.txt`
 
 ### `releases/latest/`
 
-- `PDF-Next-win-x64.msi`
-- `PDF-Next-win-x64-unpacked/`
+- `Central-PDF-win-x64.msi`
+- `Central-PDF-win-x64-unpacked/`
 - `RELEASE.txt`
 - `NO-INSTALL.txt`
 
 Observação importante:
 
 - o single-file portable não é mais publicado em `latest`
-- a forma sem instalação mais confiável é a pasta `PDF-Next-win-x64-unpacked/`
+- a forma sem instalação mais confiável é a pasta `Central-PDF-win-x64-unpacked/`
 
 ## Electron Builder
 
@@ -141,18 +141,18 @@ dist/
   assets/
 
 dist-installer/
-  Central PDF 1.5.msi
-  Central-PDF-Portable-1.5.exe
+  Central PDF 1.2.0.msi
+  Central-PDF-Portable-1.2.0.exe
 
 releases/
-  1.5/
-    PDF-Next-1.5-win-x64.msi
-    PDF-Next-1.5-win-x64-portable.exe
-    PDF-Next-win-x64-unpacked/
+  1.2.0/
+    Central-PDF-1.2.0-win-x64.msi
+    Central-PDF-1.2.0-win-x64-portable.exe
+    Central-PDF-win-x64-unpacked/
     RELEASE.txt
   latest/
-    PDF-Next-win-x64.msi
-    PDF-Next-win-x64-unpacked/
+    Central-PDF-win-x64.msi
+    Central-PDF-win-x64-unpacked/
     RELEASE.txt
     NO-INSTALL.txt
 ```

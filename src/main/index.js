@@ -8,6 +8,7 @@ const { performance } = require('perf_hooks');
 
 const configService = require('./config-service');
 const pdfService = require('./pdf-service');
+const { APP_DEFAULTS } = require('./constants');
 const queue = require('./queue');
 const logger = require('./logger');
 const { createPdfWorkerExecution } = require('./worker-runtime');
@@ -18,6 +19,8 @@ const {
   inspectPdfFileAsync,
   inspectImageFile,
   hasPdfEncryptionDictionaryAsync,
+  resolveUniqueOutputPath,
+  sanitizeFilename,
   PDF_LIMITS
 } = require('./utils');
 const {
@@ -827,7 +830,7 @@ function assertDirectory(dirPath, errorMessage = 'Directory does not exist.') {
     throw new Error(errorMessage);
   }
   const stats = fs.existsSync(dirPath) ? fs.statSync(dirPath) : null;
-  if (!stats.isDirectory()) {
+  if (!stats || !stats.isDirectory()) {
     throw new Error(errorMessage);
   }
 }
@@ -895,7 +898,7 @@ async function validateFiles(type, files) {
   const warnings = [];
   const filteredFiles = [];
   const skippedProtectedFiles = [];
-  const supportsImageInputs = type === 'merge' || type === 'files-to-pdf' || type === 'watermark';
+  const supportsImageInputs = type === 'merge' || type === 'files-to-pdf' || type === 'watermark' || type === 'compress';
   const canSkipProtectedInBatch = type === 'merge' || type === 'files-to-pdf' || type === 'watermark';
 
   if (type === 'images-to-pdf') {
@@ -1015,8 +1018,8 @@ function getOperationalWarnings(type, files) {
   if (pdfInspections.some((item) => item.warnings.includes('large'))) {
     warnings.push('Documento grande detectado. O processamento pode levar mais tempo.');
   }
-  if (type === 'images-to-pdf' && files.length >= 10) {
-    warnings.push('Muitas imagens detectadas. O app pode usar modo otimizado.');
+  if (type === 'images-to-pdf') {
+    warnings.push(...getImageBatchWarnings(files, configService.getConfig().memorySoftLimitMb));
   }
 
   return warnings;
@@ -1396,7 +1399,14 @@ ipcMain.handle('convert-document-to-temp-pdf', async (event, documentPath) => {
   const tempPdfName = `temp-document-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
   const tempPdfPath = path.join(tempDir, tempPdfName);
   await fs.promises.mkdir(tempDir, { recursive: true });
-  return (await convertDocumentToPdf(documentPath, tempPdfPath)).outputPath;
+
+  const timeoutMs = configService.getConfig().operationTimeoutMs || APP_DEFAULTS.operationTimeoutMs;
+  const conversion = convertDocumentToPdf(documentPath, tempPdfPath);
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('A conversão do documento excedeu o tempo limite configurado.')), timeoutMs);
+  });
+  const result = await Promise.race([conversion, timeout]);
+  return result.outputPath;
 });
 
 ipcMain.handle('save-temp-file', async (event, { base64Data, extension }) => {
@@ -1439,7 +1449,15 @@ ipcMain.handle('move-temp-file-to-dest', async (event, { tempPath, targetName, o
   if (typeof tempPath !== 'string' || typeof targetName !== 'string') {
     throw new Error('Caminhos inválidos para movimentação.');
   }
-  
+
+  const tempDir = path.resolve(configService.getTempPath());
+  const relativeToTempDir = path.relative(tempDir, path.resolve(tempPath));
+  const tempPathIsInsideTempDir = relativeToTempDir === ''
+    || (relativeToTempDir !== '..' && !relativeToTempDir.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeToTempDir));
+  if (!path.isAbsolute(tempPath) || !tempPathIsInsideTempDir) {
+    throw new Error('Caminho temporário inválido.');
+  }
+
   const config = configService.getConfig();
   // Temporary files are only an implementation detail. The caller may provide
   // the original document folder; otherwise keep the result beside the temp
@@ -1447,7 +1465,6 @@ ipcMain.handle('move-temp-file-to-dest', async (event, { tempPath, targetName, o
   let outputDir = typeof requestedOutputDir === 'string' && requestedOutputDir.trim()
     ? requestedOutputDir.trim()
     : (config.defaultOutputDir || '').trim();
-  const tempDir = path.resolve(configService.getTempPath());
   const relativeToTemp = outputDir ? path.relative(tempDir, path.resolve(outputDir)) : '';
   const outputIsTemp = outputDir && (
     relativeToTemp === ''
@@ -1458,7 +1475,11 @@ ipcMain.handle('move-temp-file-to-dest', async (event, { tempPath, targetName, o
   }
   assertDirectory(outputDir, 'Pasta de saída inválida.');
   
-  const finalPath = path.join(outputDir, targetName);
+  const safeTargetName = sanitizeFilename(targetName);
+  if (!safeTargetName) {
+    throw new Error('Nome de arquivo de destino inválido.');
+  }
+  const finalPath = resolveUniqueOutputPath(path.join(outputDir, safeTargetName));
   await fs.promises.rename(tempPath, finalPath);
   return finalPath;
 });

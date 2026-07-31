@@ -207,6 +207,7 @@ const queueAndHistory = createQueueAndHistoryRenderer({
   notify,
   showFeedbackBanner,
   clearFeedbackBanner,
+  clearToast: toastCenter.clear,
   showCustomConfirmModal,
   getOperationLabel,
   updateRecentHistory: updateRecentHistoryFromTask,
@@ -2308,12 +2309,18 @@ function showCustomConfirmModal(title, message, onConfirm, onCancel, options = {
   if (btnOk) btnOk.textContent = confirmLabel;
   if (btnCancel) btnCancel.textContent = cancelLabel;
 
+  const previouslyFocused = document.activeElement;
   modal.classList.remove("hidden");
 
   const close = () => {
     modal.classList.add("hidden");
     btnOk.removeEventListener("click", handleOk);
     btnCancel.removeEventListener("click", handleCancel);
+    modal.removeEventListener("click", handleBackdrop);
+    modal.removeEventListener("keydown", handleKeydown);
+    if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+      previouslyFocused.focus({ preventScroll: true });
+    }
   };
 
   const handleOk = () => {
@@ -2330,8 +2337,27 @@ function showCustomConfirmModal(title, message, onConfirm, onCancel, options = {
     }
   };
 
+  const handleBackdrop = (event) => {
+    if (event.target === modal) {
+      handleCancel();
+    }
+  };
+
+  const handleKeydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      handleCancel();
+    }
+  };
+
   btnOk.addEventListener("click", handleOk);
   btnCancel.addEventListener("click", handleCancel);
+  modal.addEventListener("click", handleBackdrop);
+  modal.addEventListener("keydown", handleKeydown);
+
+  window.setTimeout(() => {
+    btnOk.focus({ preventScroll: true });
+  }, 0);
 }
 
 function switchTab(tabId, options = {}) {

@@ -1,11 +1,11 @@
 const path = require('path');
-const { sanitizeFilename } = require('../../utils');
+const { sanitizeFilename, resolveUniqueOutputPath } = require('../../utils');
 const { convertImagesToPdf } = require('./image-to-pdf');
 
 function buildImageToPdfOutputPath(files, options, outputDir) {
   const requestedName = sanitizeFilename(options.outputName || 'imagens.pdf');
   const normalizedName = requestedName.toLowerCase().endsWith('.pdf') ? requestedName : `${requestedName}.pdf`;
-  return path.join(outputDir, normalizedName);
+  return resolveUniqueOutputPath(path.join(outputDir, normalizedName));
 }
 
 async function runImageToPdfConversion(payload, updateProgress, isCancelled) {

@@ -132,7 +132,7 @@ export function createRedactWorkspaceController(deps) {
     editor.innerHTML = pageBoxes.map((box, index) => {
       const isSelected = box.id === state.redactSelectedBoxId;
       return `
-        <div class="redact-field-item ${isSelected ? 'selected' : ''}" data-box-id="${box.id}" style="cursor: pointer; ${isSelected ? 'border-color: var(--accent-color);' : ''}">
+        <div class="redact-field-item ${isSelected ? 'selected' : ''}" data-box-id="${box.id}" role="option" tabindex="0" aria-selected="${isSelected ? 'true' : 'false'}" style="cursor: pointer; ${isSelected ? 'border-color: var(--accent-color);' : ''}">
           <span>Tarja Preta #${index + 1}</span>
           <button class="btn-danger-text btn-sm btn-icon" data-remove-box="${box.id}" title="Remover esta tarja">${icon('remove')}</button>
         </div>
@@ -146,6 +146,24 @@ export function createRedactWorkspaceController(deps) {
         state.redactSelectedBoxId = boxId;
         renderOverlayLayer();
         renderBoxList();
+      });
+      item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          state.redactSelectedBoxId = boxId;
+          renderOverlayLayer();
+          renderBoxList();
+          return;
+        }
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          state.redactBoxes = state.redactBoxes.filter((box) => box.id !== boxId);
+          if (state.redactSelectedBoxId === boxId) {
+            state.redactSelectedBoxId = '';
+          }
+          renderOverlayLayer();
+          renderBoxList();
+        }
       });
     });
 
@@ -197,9 +215,9 @@ export function createRedactWorkspaceController(deps) {
       const style = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;background:${bgOpacity};${borderStyle}`;
 
       return `
-        <div class="redact-box-chip${selected ? ' selected' : ''}" data-redact-box-id="${box.id}" style="${style}">
+        <button type="button" class="redact-box-chip${selected ? ' selected' : ''}" data-redact-box-id="${box.id}" aria-label="Tarja preta ${selected ? 'selecionada' : 'não selecionada'}. Use Delete para remover." aria-pressed="${selected ? 'true' : 'false'}" style="${style}">
           <span class="redact-box-resize-handle" data-redact-resize-handle="${box.id}" style="${color === '#ffffff' ? 'background:#ffcc00;border:1px solid #000000;' : ''}" aria-hidden="true"></span>
-        </div>
+        </button>
       `;
     }).join('');
 
@@ -211,6 +229,32 @@ export function createRedactWorkspaceController(deps) {
         state.redactSelectedBoxId = boxId;
         renderOverlayLayer();
         renderBoxList();
+      });
+
+      element.addEventListener('keydown', (event) => {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          event.stopPropagation();
+          state.redactBoxes = state.redactBoxes.filter((b) => b.id !== boxId);
+          if (state.redactSelectedBoxId === boxId) {
+            state.redactSelectedBoxId = '';
+          }
+          renderOverlayLayer();
+          renderBoxList();
+          return;
+        }
+
+        const box = state.redactBoxes.find((b) => b.id === boxId);
+        if (!box || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const step = event.shiftKey ? 0.05 : 0.01;
+        if (event.key === 'ArrowLeft') box.xRatio = clamp(box.xRatio - step, 0, 0.92);
+        if (event.key === 'ArrowRight') box.xRatio = clamp(box.xRatio + step, 0, 0.92);
+        if (event.key === 'ArrowUp') box.yRatio = clamp(box.yRatio - step, 0, 0.92);
+        if (event.key === 'ArrowDown') box.yRatio = clamp(box.yRatio + step, 0, 0.92);
+        state.redactSelectedBoxId = boxId;
+        renderOverlayLayer();
       });
 
       element.addEventListener('pointerdown', (event) => {

@@ -4,7 +4,7 @@ const { execFile } = require('child_process');
 const crypto = require('crypto');
 const { parentPort, workerData } = require('worker_threads');
 const pdfService = require('./pdf-service');
-const { sanitizeFilename } = require('./utils');
+const { sanitizeFilename, resolveUniqueOutputPath } = require('./utils');
 const { runImageToPdfConversion, buildImageToPdfOutputPath } = require('./services/image-conversion/conversion-worker');
 const { runSignatureOperation } = require('./services/signature/signature-worker');
 const { runPdfToWordConversion } = require('./services/conversion/conversion-worker');
@@ -31,7 +31,7 @@ function post(type, payload) {
   }
 }
 
-function buildOutputPath(type, files, options, outputDir) {
+function buildOutputPathCandidate(type, files, options, outputDir) {
   if (type === 'merge' || type === 'files-to-pdf') {
     return path.join(outputDir, sanitizeFilename(options.outputName || 'merged.pdf'));
   }
@@ -67,6 +67,11 @@ function buildOutputPath(type, files, options, outputDir) {
     return path.join(outputDir, sanitizeFilename(options.outputName || `${path.parse(files[0] || 'documento').name}_redigido.pdf`));
   }
   return '';
+}
+
+function buildOutputPath(type, files, options, outputDir) {
+  const candidate = buildOutputPathCandidate(type, files, options, outputDir);
+  return candidate ? resolveUniqueOutputPath(candidate) : candidate;
 }
 
 async function executeOperation() {
@@ -189,46 +194,69 @@ async function cleanupTempPaths(paths = []) {
 
 function zipFiles(files, zipPath, outputDir) {
   return new Promise((resolve, reject) => {
+    const tempZipDir = path.join(outputDir, `.tmp_zip_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`);
+    const moved = [];
+
+    const restoreMovedFiles = () => {
+      for (const { original, dest } of moved) {
+        try {
+          if (fs.existsSync(dest) && !fs.existsSync(original)) {
+            fs.renameSync(dest, original);
+          }
+        } catch (restoreError) {
+          console.error('Failed to restore file after zip failure:', restoreError);
+        }
+      }
+    };
+
+    const cleanupTempDir = () => {
+      try {
+        fs.rmSync(tempZipDir, { recursive: true, force: true });
+      } catch (rmError) {
+        console.error('Failed to clean up temp zip dir:', rmError);
+      }
+    };
+
     try {
-      const tempZipDir = path.join(outputDir, `.tmp_zip_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`);
       fs.mkdirSync(tempZipDir, { recursive: true });
 
-      // Move files to temp zip dir
+      // Move files to temp zip dir, tracking what moved so we can roll back on failure.
       for (const file of files) {
         if (fs.existsSync(file)) {
           const dest = path.join(tempZipDir, path.basename(file));
           fs.renameSync(file, dest);
+          moved.push({ original: file, dest });
         }
       }
-
-      const sourceWildcard = path.join(tempZipDir, '*');
-      const sourceWildcardEscaped = sourceWildcard.replace(/'/g, "''");
-      const zipPathEscaped = zipPath.replace(/'/g, "''");
-
-      const args = [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Compress-Archive -Path '${sourceWildcardEscaped}' -DestinationPath '${zipPathEscaped}' -Force`
-      ];
-
-      execFile('powershell.exe', args, (error, stdout, stderr) => {
-        // Clean up the temporary folder in any case
-        try {
-          fs.rmSync(tempZipDir, { recursive: true, force: true });
-        } catch (rmError) {
-          console.error('Failed to clean up temp zip dir:', rmError);
-        }
-
-        if (error) {
-          reject(new Error(`Erro ao compactar arquivos: ${stderr || error.message}`));
-        } else {
-          resolve();
-        }
-      });
     } catch (err) {
+      restoreMovedFiles();
+      cleanupTempDir();
       reject(err);
+      return;
     }
+
+    const sourceWildcard = path.join(tempZipDir, '*');
+    const sourceWildcardEscaped = sourceWildcard.replace(/'/g, "''");
+    const zipPathEscaped = zipPath.replace(/'/g, "''");
+
+    const args = [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Compress-Archive -Path '${sourceWildcardEscaped}' -DestinationPath '${zipPathEscaped}' -Force`
+    ];
+
+    execFile('powershell.exe', args, (error, stdout, stderr) => {
+      if (error) {
+        restoreMovedFiles();
+        cleanupTempDir();
+        reject(new Error(`Erro ao compactar arquivos: ${stderr || error.message}`));
+        return;
+      }
+
+      cleanupTempDir();
+      resolve();
+    });
   });
 }
 
@@ -262,6 +290,7 @@ function zipFiles(files, zipPath, outputDir) {
       }
 
       if (filesToZip.length > 0 && zipPath) {
+        zipPath = resolveUniqueOutputPath(zipPath);
         await zipFiles(filesToZip, zipPath, outputDir);
         const newResult = { outputPath: zipPath };
         if (result.reduction !== undefined) {

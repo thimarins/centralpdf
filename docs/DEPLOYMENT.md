@@ -15,18 +15,18 @@ Formatos atuais de distribuição:
 
 Arquivo esperado:
 
-- `Central PDF 1.5.msi`
+- `Central PDF 1.2.0.msi`
 
 Instalação interativa:
 
 ```powershell
-msiexec /i "Central PDF 1.5.msi"
+msiexec /i "Central PDF 1.2.0.msi"
 ```
 
 Instalação silenciosa:
 
 ```powershell
-msiexec /i "Central PDF 1.5.msi" /quiet /norestart
+msiexec /i "Central PDF 1.2.0.msi" /quiet /norestart
 ```
 
 ## Perfil Atual do MSI
@@ -69,7 +69,7 @@ O projeto está apto para empacotamento futuro via Intune porque:
 
 Arquivo versionado:
 
-- `PDF-Next-1.5-win-x64-portable.exe`
+- `Central-PDF-1.2.0-win-x64-portable.exe`
 
 Uso recomendado:
 
@@ -118,7 +118,7 @@ Pode ser usado para:
 1. gerar novo build
 2. executar `npm run health-check`
 3. executar `npm run release-check`
-4. validar visualmente a pasta `releases/latest/PDF-Next-win-x64-unpacked/`
+4. validar visualmente a pasta `releases/latest/Central-PDF-win-x64-unpacked/`
 5. distribuir MSI via canal corporativo
 6. manter unpacked como contingência operacional
 

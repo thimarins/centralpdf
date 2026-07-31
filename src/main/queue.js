@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { APP_DEFAULTS, QUEUE_POLICY } = require('./constants');
+const logger = require('./logger');
 
 class ProcessingQueue extends EventEmitter {
   constructor() {
@@ -17,7 +18,6 @@ class ProcessingQueue extends EventEmitter {
       persistenceEnabled: true,
       persistencePath: ''
     };
-    this.persistenceWritePromise = Promise.resolve();
     this.persistenceScheduled = false;
   }
 
@@ -94,7 +94,9 @@ class ProcessingQueue extends EventEmitter {
 
     try {
       fs.writeFileSync(this.options.persistencePath, JSON.stringify(payload, null, 2), 'utf8');
-    } catch (e) {}
+    } catch (e) {
+      logger.logError('QUEUE_PERSIST_FAILED', e);
+    }
   }
 
   schedulePersistState() {
@@ -212,7 +214,7 @@ class ProcessingQueue extends EventEmitter {
     const progressHandler = (progress) => {
       if (!this.runningTasks.has(task.id)) return;
       if (task.cancelled) {
-        throw new Error('OPERATION_CANCELLED');
+        return;
       }
 
       if (typeof progress.progress === 'number') task.progress = progress.progress;

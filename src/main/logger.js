@@ -78,7 +78,11 @@ function writeLog(filename, message) {
         rotateLog(logFilePath);
       }
     })
-    .catch(() => {});
+    .catch((err) => {
+      // The logger can't log its own failure through itself; fall back to the console
+      // so a missing/inaccessible log directory doesn't fail completely silently.
+      console.error(`Failed to write log file ${filename}:`, err);
+    });
 }
 
 function sanitizeLogText(text) {
@@ -189,7 +193,8 @@ async function exportDiagnostics(exportPath, currentConfig, healthSummary = {}) 
     sanitizedConfig.recentHistory = sanitizedConfig.recentHistory.map(item => ({
       ...item,
       filePath: item.filePath ? path.basename(item.filePath) : '', // only file name, hide absolute path
-      outputPath: item.outputPath ? path.basename(item.outputPath) : ''
+      outputPath: item.outputPath ? path.basename(item.outputPath) : '',
+      outputDir: item.outputDir ? '[configured-output-dir]' : ''
     }));
   }
   

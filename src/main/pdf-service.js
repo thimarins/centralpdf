@@ -14,7 +14,7 @@ const {
 } = require('pdf-lib');
 const { encryptPDF } = require('@pdfsmaller/pdf-encrypt');
 const { decryptPDF, isEncrypted } = require('@pdfsmaller/pdf-decrypt');
-const { isValidPdfPath, parsePageRanges, sanitizeFilename, inspectPdfFile, hasPdfEncryptionDictionary, PDF_LIMITS } = require('./utils');
+const { isValidPdfPath, isValidImagePath, parsePageRanges, sanitizeFilename, inspectPdfFile, hasPdfEncryptionDictionary, resolveUniqueOutputPath, PDF_LIMITS, IMAGE_LIMITS } = require('./utils');
 
 const FONT_MAP = {
   Helvetica: StandardFonts.Helvetica,
@@ -554,13 +554,7 @@ async function loadWatermarkAsset(imagePath) {
 function buildWatermarkOutputPath(inputPath, outputDir, suffix) {
   const parsed = path.parse(inputPath);
   const safeSuffix = sanitizeFilename(suffix || '_marca_dagua').replace(/\.pdf$/i, '');
-  let candidatePath = path.join(outputDir, `${parsed.name}${safeSuffix}.pdf`);
-  let counter = 1;
-  while (fs.existsSync(candidatePath)) {
-    candidatePath = path.join(outputDir, `${parsed.name}${safeSuffix}_${counter}.pdf`);
-    counter += 1;
-  }
-  return candidatePath;
+  return resolveUniqueOutputPath(path.join(outputDir, `${parsed.name}${safeSuffix}.pdf`));
 }
 
 async function saveAndValidatePdf(pdfDoc, outputPath, isCancelled = () => false) {
@@ -678,7 +672,7 @@ async function splitPdfByPages(inputPath, outputDir, prefix = 'page', isCancelle
     const newPdf = await PDFDocument.create();
     const [copiedPage] = await newPdf.copyPages(sourcePdf, [i]);
     newPdf.addPage(copiedPage);
-    const outputPath = path.join(outputDir, `${prefix}_${i + 1}.pdf`);
+    const outputPath = resolveUniqueOutputPath(path.join(outputDir, `${prefix}_${i + 1}.pdf`));
     await saveAndValidatePdf(newPdf, outputPath, isCancelled);
     createdFiles.push(outputPath);
   }
@@ -733,7 +727,7 @@ async function splitPdfBySize(inputPath, outputDir, maxSizeBytes, prefix = 'part
 
     if (bytes.length > maxSizeBytes && currentPartPages.length > 1) {
       currentPartPages.pop();
-      const outputPath = path.join(outputDir, `${prefix}_${partIndex}.pdf`);
+      const outputPath = resolveUniqueOutputPath(path.join(outputDir, `${prefix}_${partIndex}.pdf`));
       const partPdf = await PDFDocument.create();
       const partPages = await partPdf.copyPages(sourcePdf, currentPartPages);
       partPages.forEach((page) => partPdf.addPage(page));
@@ -745,7 +739,7 @@ async function splitPdfBySize(inputPath, outputDir, maxSizeBytes, prefix = 'part
   }
 
   if (currentPartPages.length > 0) {
-    const outputPath = path.join(outputDir, `${prefix}_${partIndex}.pdf`);
+    const outputPath = resolveUniqueOutputPath(path.join(outputDir, `${prefix}_${partIndex}.pdf`));
     const finalPdf = await PDFDocument.create();
     const finalPages = await finalPdf.copyPages(sourcePdf, currentPartPages);
     finalPages.forEach((page) => finalPdf.addPage(page));
@@ -861,6 +855,67 @@ async function compressPdf(inputPath, outputPath, isCancelled = () => false, upd
     ensureNotCancelled(isCancelled);
     await commitFileAtomically(tempPath, outputPath);
     await maybeApplyAggressiveCompression(outputPath, isCancelled);
+  } catch (error) {
+    await fs.promises.unlink(tempPath).catch(() => {});
+    throw error;
+  }
+
+  const newSize = fs.statSync(outputPath).size;
+  return Math.max(0, Math.round(((originalSize - newSize) / originalSize) * 100));
+}
+
+async function compressImage(inputPath, outputPath, isCancelled = () => false, updateProgress = () => {}) {
+  if (!isValidImagePath(inputPath, IMAGE_LIMITS.maxImageBytes)) {
+    throw new Error('Não foi possível abrir esta imagem para processamento.');
+  }
+
+  const nativeImageModule = getNativeImageModule();
+  if (!nativeImageModule) {
+    throw new Error('Redução de imagem não é suportada neste ambiente.');
+  }
+
+  const originalBuffer = await fs.promises.readFile(inputPath);
+  const originalSize = originalBuffer.length;
+  const isPng = path.extname(inputPath).toLowerCase() === '.png';
+
+  updateProgress({ progress: 15, itemProgress: 15 });
+  ensureNotCancelled(isCancelled);
+
+  const originalImage = nativeImageModule.createFromBuffer(originalBuffer);
+  if (!originalImage || originalImage.isEmpty()) {
+    throw new Error('Não foi possível abrir esta imagem para processamento.');
+  }
+
+  const { width: sourceWidth, height: sourceHeight } = originalImage.getSize();
+  const needsResize = Math.max(sourceWidth, sourceHeight) > AUTO_IMAGE_MAX_DIMENSION;
+  const workingImage = needsResize
+    ? (sourceWidth >= sourceHeight
+      ? originalImage.resize({
+        width: AUTO_IMAGE_MAX_DIMENSION,
+        height: Math.max(1, Math.round((sourceHeight * AUTO_IMAGE_MAX_DIMENSION) / sourceWidth)),
+        quality: 'good'
+      })
+      : originalImage.resize({
+        width: Math.max(1, Math.round((sourceWidth * AUTO_IMAGE_MAX_DIMENSION) / sourceHeight)),
+        height: AUTO_IMAGE_MAX_DIMENSION,
+        quality: 'good'
+      }))
+    : originalImage;
+
+  updateProgress({ progress: 55, itemProgress: 55 });
+  ensureNotCancelled(isCancelled);
+
+  const compressedBuffer = isPng ? workingImage.toPNG() : Buffer.from(workingImage.toJPEG(AUTO_JPEG_QUALITY));
+  const finalBuffer = compressedBuffer.length < originalSize ? compressedBuffer : originalBuffer;
+
+  const tempPath = buildTempOutputPath(outputPath);
+  await ensureParentDirectory(outputPath);
+  await fs.promises.writeFile(tempPath, finalBuffer);
+  updateProgress({ progress: 90, itemProgress: 90 });
+
+  try {
+    ensureNotCancelled(isCancelled);
+    await commitFileAtomically(tempPath, outputPath);
   } catch (error) {
     await fs.promises.unlink(tempPath).catch(() => {});
     throw error;
@@ -1311,6 +1366,7 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
   }
 
   const targetPdf = await PDFDocument.create();
+  const usedImagePaths = [];
 
   for (let i = 0; i < pageCount; i += 1) {
     ensureNotCancelled(isCancelled);
@@ -1331,7 +1387,7 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
         height
       });
 
-      await fs.promises.unlink(imagePath).catch(() => {});
+      usedImagePaths.push(imagePath);
     } else {
       const [copiedPage] = await targetPdf.copyPages(sourcePdf, [i]);
       targetPdf.addPage(copiedPage);
@@ -1346,6 +1402,10 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
 
   ensureNotCancelled(isCancelled);
   await saveAndValidatePdf(targetPdf, outputPath, isCancelled);
+
+  // Only delete the source stamp images once the final PDF is committed,
+  // so a failed/cancelled attempt can retry using the same stamps.
+  await Promise.all(usedImagePaths.map((imagePath) => fs.promises.unlink(imagePath).catch(() => {})));
 }
 
 module.exports = {
@@ -1357,6 +1417,7 @@ module.exports = {
   splitPdfBySize,
   organizePdf,
   compressPdf,
+  compressImage,
   encryptPdf,
   decryptPdf,
   redactPdf,

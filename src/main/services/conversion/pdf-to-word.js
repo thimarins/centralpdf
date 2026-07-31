@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { inspectPdfFile, sanitizeFilename, PDF_LIMITS } = require('../../utils');
+const { inspectPdfFile, sanitizeFilename, PDF_LIMITS, resolveUniqueOutputPath } = require('../../utils');
 const { extractStructuredText } = require('./text-extractor');
 const { buildDocxBuffer } = require('./docx-builder');
 
@@ -29,13 +29,7 @@ function buildOutputPath(inputPath, outputDir, outputName, format) {
   const parsed = path.parse(inputPath);
   const extension = format === 'text' ? '.txt' : '.docx';
   const baseName = outputName ? sanitizeFilename(outputName.replace(/\.(docx|txt)$/i, '')) : `${parsed.name}_convertido`;
-  let candidate = path.join(outputDir, `${baseName}${extension}`);
-  let counter = 1;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(outputDir, `${baseName}_${counter}${extension}`);
-    counter += 1;
-  }
-  return candidate;
+  return resolveUniqueOutputPath(path.join(outputDir, `${baseName}${extension}`));
 }
 
 async function convertPdfToWord(inputPath, outputDir, options = {}, progress = () => {}, isCancelled = () => false) {

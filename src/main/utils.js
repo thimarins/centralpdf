@@ -152,6 +152,36 @@ function sanitizeFilename(filename) {
 }
 
 /**
+ * Given a desired output path, atomically claims it (or the first
+ * "name (1).ext", "name (2).ext", ... variant that is free) by creating an
+ * empty placeholder file there via exclusive create (O_EXCL). This is what
+ * makes the check-and-claim race-free across concurrent workers/processes,
+ * not just within a single thread: two callers racing for the same name can
+ * never both "win" the same path, because the OS serializes the exclusive
+ * create. The caller is expected to write the real content shortly after
+ * (via a temp-file-then-rename commit), which overwrites the placeholder.
+ * @param {string} outputPath
+ * @returns {string}
+ */
+function resolveUniqueOutputPath(outputPath) {
+  const parsed = path.parse(outputPath);
+  fs.mkdirSync(parsed.dir, { recursive: true });
+
+  let candidate = outputPath;
+  let counter = 0;
+  for (;;) {
+    try {
+      fs.closeSync(fs.openSync(candidate, 'wx'));
+      return candidate;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      counter += 1;
+      candidate = path.join(parsed.dir, `${parsed.name} (${counter})${parsed.ext}`);
+    }
+  }
+}
+
+/**
  * Validates a file path to ensure it is absolute and belongs to an existing file.
  * @param {string} filePath 
  * @param {number} maxSizeBytes Maximum allowed file size in bytes (default 300MB)
@@ -339,6 +369,7 @@ module.exports = {
   PDF_LIMITS,
   IMAGE_LIMITS,
   sanitizeFilename,
+  resolveUniqueOutputPath,
   isValidPdfPath,
   isValidImagePath,
   parsePageRanges,

@@ -1,8 +1,7 @@
-const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 const pdfService = require('../../pdf-service');
-const { sanitizeFilename, inspectPdfFile, PDF_LIMITS } = require('../../utils');
+const { sanitizeFilename, inspectPdfFile, PDF_LIMITS, resolveUniqueOutputPath } = require('../../utils');
 const { normalizeSignatureOptions } = require('./field-manager');
 const { embedFont, embedSealImage, embedDrawnSignature, drawTextField, drawImageField } = require('./signature-renderer');
 
@@ -69,16 +68,10 @@ async function applySimpleSignature(inputPath, outputPath, rawOptions, isCancell
 
 function buildSignatureOutputPath(inputPath, outputDir, outputName, outputSuffix) {
   const parsed = path.parse(inputPath);
-  let candidate = outputName
+  const candidate = outputName
     ? path.join(outputDir, sanitizeFilename(outputName.endsWith('.pdf') ? outputName : `${outputName}.pdf`))
     : path.join(outputDir, `${parsed.name}${sanitizeFilename(outputSuffix || '_assinado').replace(/\.pdf$/i, '')}.pdf`);
-  let counter = 1;
-  while (fs.existsSync(candidate)) {
-    const base = path.parse(candidate);
-    candidate = path.join(base.dir, `${base.name}_${counter}${base.ext}`);
-    counter += 1;
-  }
-  return candidate;
+  return resolveUniqueOutputPath(candidate);
 }
 
 module.exports = {

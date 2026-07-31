@@ -3,6 +3,7 @@ const path = require('path');
 const { app } = require('electron');
 const { PDF_LIMITS } = require('./utils');
 const { APP_DEFAULTS, APP_LIMITS, APP_PATHS } = require('./constants');
+const logger = require('./logger');
 
 let configPath = '';
 let logsPath = '';
@@ -100,7 +101,8 @@ function loadConfig() {
       const parsed = JSON.parse(data);
       currentConfig = { ...currentConfig, ...parsed };
     } catch (err) {
-      // Keep defaults when local config is malformed.
+      // Keep defaults when local config is malformed, but make sure this is visible.
+      logger.logError('CONFIG_LOAD_FAILED', err);
     }
   }
 
@@ -260,7 +262,8 @@ function applyPolicies() {
       currentConfig.organizeMaxThumbsInMemory = policy.organizeMaxThumbsInMemory;
     }
   } catch (err) {
-    // Keep local settings when the policy file cannot be parsed.
+    // Keep local settings when the policy file cannot be parsed, but make sure this is visible.
+    logger.logError('POLICY_LOAD_FAILED', err);
   }
 }
 

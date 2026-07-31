@@ -48,7 +48,7 @@ function getImageBatchWarnings(files, memorySoftLimitMb = 1024) {
     warnings.push('Lote de imagens moderado detectado. Pré-visualizações podem ser reduzidas para preservar fluidez.');
   }
 
-  if (inspections.some((inspection) => (inspection.dimensions.width || 0) * (inspection.dimensions.height || 0) >= IMAGE_LIMITS.maxRasterPixels * 0.75)) {
+  if (inspections.some((inspection) => inspection.ok && ((inspection.dimensions?.width || 0) * (inspection.dimensions?.height || 0)) >= IMAGE_LIMITS.maxRasterPixels * 0.75)) {
     warnings.push('Imagens muito grandes detectadas. O PDF será gerado com ajuste proporcional e processamento mais conservador.');
   }
 

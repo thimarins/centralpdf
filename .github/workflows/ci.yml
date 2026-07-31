@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  test:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,3 +17,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm audit --omit=dev
+      - run: npm run test:assets
+      - run: npm run test:functional
+      - run: npm run test:queue
+      - run: npm run test:security
+      - run: npm run test:architecture

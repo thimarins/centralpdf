@@ -853,10 +853,12 @@
 .redact-box-chip {
   position: absolute;
   box-sizing: border-box;
+  padding: 0;
   border: 2px solid #ff3b30;
   background: rgba(0, 0, 0, 0.55);
   cursor: grab;
   pointer-events: auto;
+  font: inherit;
 }
 
 .redact-box-chip.selected {

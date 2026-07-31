@@ -1148,6 +1148,7 @@ function normalizeBinaryData(data) {
     }
 
     state.organizeTempPaths = [];
+    organizeZoomRenderCache.clear();
     const sourcePath = isImage ? await convertImageToOrganizePdf(file) : await ensureOrganizePdfPath(file);
     const sourceFile = registerOrganizeSourceFile(file, sourcePath || file.path || '', isImage ? 'image' : 'pdf');
     state.organizeFile = sourceFile;
@@ -1492,6 +1493,7 @@ function normalizeBinaryData(data) {
 
   function clearOrganizeWorkspace() {
     cleanupOrganizeTempPaths();
+    organizeZoomRenderCache.clear();
     const organizeDocuments = [...new Set([
       ...(Array.isArray(state.organizePdfDocs) ? state.organizePdfDocs : []),
       state.organizePdfDoc
