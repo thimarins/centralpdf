@@ -3,7 +3,8 @@
 Utilitário corporativo para processamento **local** de documentos PDF/Office no Windows. Operação 100% offline, previsível, com baixa manutenção e sem dependência de cloud, serviço residente ou backend remoto.
 
 - **App**: Electron 43 + Vite (renderer em JS puro, sem framework)
-- **Motor de PDF**: `pdf-lib` (escrita/manipulação), `pdfjs-dist` (preview), QPDF WASM (descriptografia local)
+- **Motor de PDF**: `pdf-lib` (escrita/manipulação), `pdfjs-dist` (preview e extração vetorial), QPDF nativo (`vendor/qpdf/` para descriptografia e linearização local)
+- **Motor de OCR**: `tesseract.js` (WebAssembly offline com dados de treinamento locais PT/EN) + `@napi-rs/canvas` (processamento adaptativo de imagem)
 - **Distribuição**: MSI corporativo, executável portátil e pasta "unpacked" sem instalação
 
 Para aprofundar em build/deploy, segurança e troubleshooting, veja a pasta [docs/](./docs/) — o guia de leitura no final deste arquivo aponta o documento certo para cada assunto.
@@ -25,6 +26,7 @@ Para aprofundar em build/deploy, segurança e troubleshooting, veja a pasta [doc
 | **Proteger PDF** | Define senha e restrições de acesso (criptografia local) |
 | **Desbloquear PDF** | Remove senha de abertura de um PDF protegido |
 | **Ocultar Dados** | Redação permanente de trechos sensíveis (não é apenas cobrir visualmente) |
+| **Reconhecer Texto (OCR)** | OCR local completo para PDFs e imagens (TIFF multipágina, JPG, PNG). Extração de área selecionada (OCR Zonal) com reconhecimento automático, suporte nativo a texto digital, inversão de polaridade (texto claro em fundo escuro), busca profunda no documento e geração de PDF pesquisável ou TXT rápido |
 
 Todas as operações passam por uma **fila** com cancelamento, timeout, retry automático e progresso por item — só uma operação roda por vez, por design (ver [Arquitetura](#arquitetura-e-módulos)).
 
@@ -96,6 +98,7 @@ Três processos/camadas Electron clássicos: **main** (Node.js, sem UI) → **pr
 | `services/document-conversion/` | `document-to-pdf.js` — DOCX/XLSX → PDF via `BrowserWindow` oculta + `printToPDF` |
 | `services/image-conversion/` | `image-to-pdf.js`, `image-validation.js`, `conversion-worker.js` — imagens → PDF |
 | `services/signature/` | `signature-service.js`, `signature-renderer.js`, `field-manager.js`, `signature-worker.js` — assinatura visual |
+| `services/ocr/` | `ocr-service.js` (motor OCR, binarização adaptativa, rotação, despolarização e camada de texto invisível), `ocr-runtime.js`, `ocr-progress.js`, `ocr-cancel-registry.js`, `pdf-range-transport.js`, `split-start-suggestions.js` |
 
 ### `src/preload/`
 
@@ -115,10 +118,12 @@ Três processos/camadas Electron clássicos: **main** (Node.js, sem UI) → **pr
 | `ui/security/unlock-workspace.js` | Desbloquear PDF |
 | `ui/image-to-pdf/image-to-pdf-workspace.js` | Converter para PDF |
 | `ui/conversion/pdf-to-word-workspace.js` | PDF para Word |
+| `ui/ocr/ocr-area-extractor.js` | Extração regional de texto (OCR Zonal) e busca profunda no documento |
+| `ui/command-palette/command-palette.js` | Paleta de comandos rápida (Ctrl+K) |
 | `ui/queue/queue-status.js` | Fila e histórico de atividades |
 | `ui/pdf-preview-utils.js` | Helpers compartilhados de preview/imagem (usado por vários workspaces acima) |
-| `ui/notifications/toast-center.js`, `ui/feedback/feedback-center.js` | Toasts e banners de feedback |
-| `ui/icons/fluent-icons.js` | Ícones Fluent UI |
+| `ui/notifications/toast-center.js` | Sistema central de notificações e toasts |
+| `ui/icons/lucide-icons.js` | Ícones do sistema (Lucide Icons) |
 | `settings/about/`, `settings/system-info/`, `settings/diagnostics/` | Tela de Configurações (Sobre, ambiente, diagnóstico) |
 
 ### Fluxo de uma operação
@@ -161,5 +166,7 @@ Sem upload automático, sem auto-update, sem serviço residente, sem telemetria 
 | [docs/UPDATE_PROCESS.md](./docs/UPDATE_PROCESS.md) | Como atualizar versões instaladas e como reverter (rollback) |
 | [docs/SECURITY.md](./docs/SECURITY.md) | Hardening do Electron, CSP, tratamento de dados sensíveis |
 | [docs/TESTING.md](./docs/TESTING.md) | Suítes de teste disponíveis e o que cada uma cobre |
+| [docs/OCR.md](./docs/OCR.md) | Guia completo do módulo OCR, formatos, modos de processamento e limites |
+| [docs/OCR-delivery-report.md](./docs/OCR-delivery-report.md) | Relatório de entrega e validação dos requisitos do OCR |
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | Erros comuns de build/execução |
 | [docs/CHANGELOG.md](./docs/CHANGELOG.md) | Histórico de versões |

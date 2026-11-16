@@ -22,7 +22,7 @@ Versão atual de fechamento da V1: `1.5`.
 - OCR local para PDF/imagem, com saída em PDF pesquisável ou TXT
 - conversão de PDF para Word (`DOCX`) ou texto estruturado; OCR opcional para páginas digitalizadas
 - mescla de múltiplos PDFs
-- separação por página, intervalo e tamanho apr?ximado
+- separação por página, intervalo e tamanho aproximado
 - organização de páginas com reorder, duplicação, remoção e rotação
 - marca d'água em lote com texto ou imagem
 - compressão local de PDF
@@ -66,7 +66,7 @@ Consulte o [Guia de OCR](OCR.md) para formatos suportados, uso e limitações, o
 
 ## Limites Operacionais Esperados
 
-- suporte oficial até apr?ximadamente `2 GB` por arquivo PDF
+- suporte oficial até aproximadamente `2 GB` por arquivo PDF
 - acima de `300 MB` o app pode reduzir previews e operar de forma mais conservadora
 - acima de `1 GB` o app ativa modo otimizado quando aplicável
 - o projeto prioriza estabilidade e degradação elegante, não edição irrestrita de documentos extremos
