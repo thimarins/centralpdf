@@ -9,7 +9,7 @@ function getFriendlyUsername() {
   try {
     const raw = os.userInfo().username || process.env.USERNAME || 'Usuário';
     return raw
-      .split(/[\._\s]/)
+      .split(/[.\s]/)
       .filter(Boolean)
       .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
       .join(' ');

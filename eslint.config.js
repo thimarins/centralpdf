@@ -31,7 +31,7 @@ module.exports = [
     }
   },
   {
-    files: ['src/renderer/**/*.js', '*.mjs', 'scripts/**/*.mjs'],
+    files: ['src/renderer/**/*.js', 'src/renderer/**/*.mjs', '*.mjs', 'scripts/**/*.mjs'],
     languageOptions: {
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.node }
@@ -39,7 +39,10 @@ module.exports = [
   },
   {
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // Catch blocks are frequently used as best-effort cleanup/fallbacks.
+      // They do not need a fake variable just to satisfy lint; unused locals
+      // and function arguments remain reported normally.
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
       'no-useless-assignment': 'warn',
       'no-control-regex': 'warn',

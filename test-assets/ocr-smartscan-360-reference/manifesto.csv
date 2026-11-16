@@ -1,0 +1,68 @@
+pagina,arquivo,paper_type,defeito,texto
+1,pagina_0001_A4_retrato_limpo.png,A4_retrato,limpo,"Contrato #0001
+Projeto de teste SmartScan • Papel: A4_retrato
+Dados principais
+Código: DOC-000001
+Cliente: Cliente 02
+Matrícula: 100001
+Data de emissão: 2026-02-02
+Este é um documento sintético utilizado para testes de OCR, tratamento de imagem e separação documental.
+Os textos, números e marcas são fictícios e servem apenas para validação funcional.
+Descrição Referência Valor
+Linha de teste 1 REF-001-1 R$ 291,31
+Linha de teste 2 REF-001-2 R$ 238,17
+Linha de teste 3 REF-001-3 R$ 764,13
+Linha de teste 4 REF-001-4 R$ 702,94
+Linha de teste 5 REF-001-5 R$ 923,69
+Assinatura:
+Rubrica:"
+2,pagina_0002_A4_paisagem_furos_esquerda_2.jpg,A4_paisagem,furos_esquerda_2,"Ficha Cadastral #0002
+Projeto de teste SmartScan • Papel: A4_paisagem
+Dados principais
+Código: DOC-000002
+Cliente: Cliente 03
+Matrícula: 100002
+Data de emissão: 2026-03-03
+Este é um documento sintético utilizado para testes de OCR, tratamento de imagem e separação documental.
+Os textos, números e marcas são fictícios e servem apenas para validação funcional.
+Descrição Referência Valor
+Linha de teste 1 REF-002-1 R$ 42.03
+Linha de teste 2 REF-002-2 R$ 105,27
+Linha de teste 3 REF-002-3 R$ 248,64
+Linha de teste 4 REF-002-4 R$ 626,03
+Linha de teste 5 REF-002-5 R$ 584,25
+Assinatura:
+Rubrica:"
+14,pagina_0014_A4_paisagem_baixo_contraste.jpg,A4_paisagem,baixo_contraste,"Checklist #0014
+Projeto de teste SmartScan • Papel: A4_paisagem
+Dados principais
+Código: DOC-000014
+Cliente: Cliente 15
+Matrícula: 100014
+Data de emissão: 2026-03-15
+Este é um documento sintético utilizado para testes de OCR, tratamento de imagem e separação documental.
+Os textos, números e marcas são fictícios e servem apenas para validação funcional.
+Descrição Referência Valor
+Linha de teste 1 REF-014-1 R$ 37,09
+Linha de teste 2 REF-014-2 R$ 393,25
+Linha de teste 3 REF-014-3 R$ 707,00
+Linha de teste 4 REF-014-4 R$ 79,56
+Linha de teste 5 REF-014-5 R$ 245,86
+Assinatura:
+Rubrica:"
+11,pagina_0011_comprovante_pequeno_inclinado.jpg,comprovante_pequeno,inclinado,"Contrato #0011
+Projeto de teste SmartScan • Papel: comprovante_pequeno
+CANHOTO
+ID: 000011
+Recebido por:
+Data:
+Obs.:
+Documento de teste"
+23,pagina_0023_comprovante_pequeno_codigo_qr.png,comprovante_pequeno,codigo_qr,"Recibo #0023
+Projeto de teste SmartScan • Papel: comprovante_pequeno
+CANHOTO
+ID: 000023
+Recebido por:
+Data:
+Obs.:
+Documento de teste"

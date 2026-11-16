@@ -92,6 +92,22 @@ async function withSuppressedConsoleWarn(fn) {
   }
 }
 
+async function withTimeout(label, operation, timeoutMs = 20000) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} excedeu o limite de ${Math.round(timeoutMs / 1000)} segundos.`));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function runProtectUnlockFlow(assets) {
   const workspace = createTempDir('ui-smoke-unlock');
   const protectedPath = path.join(workspace, 'protected.pdf');
@@ -103,7 +119,7 @@ async function runProtectUnlockFlow(assets) {
     checks.push({ name, ok: Boolean(ok), details });
   }
 
-  await withSuppressedConsoleWarn(() => pdfService.encryptPdf(assets.mediumPdf, protectedPath, password));
+  await withTimeout('Proteger PDF', () => withSuppressedConsoleWarn(() => pdfService.encryptPdf(assets.mediumPdf, protectedPath, password)));
   check('proteger gera arquivo', fs.existsSync(protectedPath), 'arquivo protegido criado');
 
   const encrypted = await hasPdfEncryptionDictionaryAsync(protectedPath);
@@ -111,13 +127,13 @@ async function runProtectUnlockFlow(assets) {
 
   let wrongPasswordRejected = false;
   try {
-    await withSuppressedConsoleWarn(() => withSuppressedStderr(() => pdfService.decryptPdf(protectedPath, path.join(workspace, 'wrong.pdf'), 'senha-errada')));
+    await withTimeout('Desbloquear PDF com senha inválida', () => withSuppressedConsoleWarn(() => withSuppressedStderr(() => pdfService.decryptPdf(protectedPath, path.join(workspace, 'wrong.pdf'), 'senha-errada'))));
   } catch (error) {
     wrongPasswordRejected = /senha|password|crypt|encrypt|decrypt|abrir/i.test(error.message || String(error));
   }
   check('desbloquear rejeita senha errada', wrongPasswordRejected, 'erro controlado para senha inválida');
 
-  await withSuppressedConsoleWarn(() => pdfService.decryptPdf(protectedPath, unlockedPath, password));
+  await withTimeout('Desbloquear PDF', () => withSuppressedConsoleWarn(() => pdfService.decryptPdf(protectedPath, unlockedPath, password)));
   check('desbloquear gera arquivo', fs.existsSync(unlockedPath), 'arquivo desbloqueado criado');
 
   const originalPages = await countPdfPages(assets.mediumPdf);
@@ -153,14 +169,22 @@ async function runUiSmoke() {
     ]);
   });
 
-  const unlockChecks = await runProtectUnlockFlow(assets);
-  unlockChecks.forEach((item) => {
+  try {
+    const unlockChecks = await runProtectUnlockFlow(assets);
+    unlockChecks.forEach((item) => {
+      reportRows.push([
+        `desbloquear: ${item.name}`,
+        item.ok ? 'ok' : 'erro',
+        item.details || ''
+      ]);
+    });
+  } catch (error) {
     reportRows.push([
-      `desbloquear: ${item.name}`,
-      item.ok ? 'ok' : 'erro',
-      item.details || ''
+      'desbloquear: fluxo completo',
+      'erro',
+      error.message || String(error)
     ]);
-  });
+  }
 
   const ok = reportRows.every((row) => row[1] === 'ok');
   const reportPath = writeReport('ui-smoke-report.md', [

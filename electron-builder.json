@@ -10,25 +10,48 @@
   },
   "electronDist": "node_modules/electron/dist",
   "files": [
-    "dist/**/*",
+    "dist/**",
     "src/main/**/*",
     "src/preload/**/*",
     "package.json"
   ],
   "asar": true,
+  "compression": "maximum",
   "asarUnpack": [
     "**/*.node"
   ],
-  "npmRebuild": false,
-  "buildDependenciesFromSource": false,
-  "fileAssociations": [
+  "extraResources": [
     {
-      "ext": "pdf",
-      "name": "PDF Document",
-      "description": "Documento PDF",
-      "role": "Editor"
+      "from": "vendor/qpdf/bin",
+      "to": "qpdf/bin"
+    },
+    {
+      "from": "vendor/qpdf/LICENSE.txt",
+      "to": "qpdf/LICENSE.txt"
+    },
+    {
+      "from": "vendor/ocr",
+      "to": "ocr"
+    },
+    {
+      "from": "vendor/licenses/runtime-third-party-notices.json",
+      "to": "licenses/runtime-third-party-notices.json"
+    },
+    {
+      "from": "node_modules/tesseract.js/LICENSE.md",
+      "to": "ocr/licenses/tesseract.js-LICENSE.md"
+    },
+    {
+      "from": "node_modules/tesseract.js-core/LICENSE",
+      "to": "ocr/licenses/tesseract.js-core-LICENSE"
+    },
+    {
+      "from": "node_modules/tesseract.js-core/LICENSE",
+      "to": "ocr/licenses/Apache-2.0.txt"
     }
   ],
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
   "win": {
     "icon": "build/icon.ico",
     "target": [

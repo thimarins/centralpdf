@@ -1,9 +1,12 @@
+import { formatDocumentMeta } from '../document-info.js';
+
 export function createProtectWorkspaceController(deps) {
   const {
     state,
     document,
     formatBytes,
-    showValidationMessage
+    showValidationMessage,
+    icon
   } = deps;
 
   function getFormValues() {
@@ -167,7 +170,7 @@ export function createProtectWorkspaceController(deps) {
 
     if (hasFile) {
       if (nameEl) nameEl.textContent = state.protectFile.name;
-      if (metaEl) metaEl.textContent = formatBytes(state.protectFile.size);
+      if (metaEl) metaEl.textContent = formatDocumentMeta(formatBytes, state.protectFile);
       const cleanName = state.protectFile.name.replace(/\.pdf$/i, "");
       if (outputInput) outputInput.value = `${cleanName}_protegido.pdf`;
     } else {
@@ -252,7 +255,7 @@ export function createProtectWorkspaceController(deps) {
         const btn = document.getElementById("btn-protect-copy-password");
         if (!btn) return;
         const oldSvg = btn.innerHTML;
-        btn.innerHTML = "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#4f9a57\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>";
+        btn.innerHTML = icon("success", { size: 18 });
         setTimeout(() => {
           btn.innerHTML = oldSvg;
         }, 1500);

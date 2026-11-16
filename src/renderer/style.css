@@ -1,10 +1,31 @@
 @import "./styles/base.css";
 @import "./styles/shell.css";
 @import "./styles/components-history.css";
+@import "./styles/components-feedback.css";
 @import "./styles/components-toolbar.css";
 @import "./styles/components-cards.css";
 @import "./styles/components-forms.css";
 @import "./styles/workspaces.css";
-@import "./styles/feedback.css";
+@import "./styles/components-density.css";
 @import "./styles/motion.css";
 @import "./styles/responsive.css";
+@import "./styles/smartscan-visual-system.css";
+@import "./styles/action-bars.css";
+
+/* Remove button drop shadows while keeping a visible keyboard focus outline. */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+.btn {
+  box-shadow: none !important;
+}
+
+button:focus-visible,
+input[type="button"]:focus-visible,
+input[type="submit"]:focus-visible,
+input[type="reset"]:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}

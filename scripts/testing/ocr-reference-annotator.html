@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Anotação local de referências OCR</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.45 "Segoe UI", sans-serif; background: #111827; color: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    main { width: min(1500px, 100%); margin: auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 3vw, 2rem); }
+    p { margin: 6px 0; color: #cbd5e1; }
+    .notice, .panel { border: 1px solid #334155; border-radius: 12px; background: #1e293b; padding: 16px; margin-top: 16px; }
+    .notice { border-left: 4px solid #60a5fa; }
+    .privacy { border-left-color: #34d399; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    label.file-picker { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #475569; border-radius: 8px; padding: 9px 12px; cursor: pointer; background: #0f172a; }
+    label.file-picker:focus-within { outline: 3px solid #60a5fa; outline-offset: 2px; }
+    input.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    button { border: 1px solid #475569; border-radius: 8px; padding: 9px 13px; background: #0f172a; color: inherit; cursor: pointer; font: inherit; }
+    button:hover:not(:disabled) { border-color: #60a5fa; background: #26354b; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .primary { background: #2563eb; border-color: #2563eb; font-weight: 650; }
+    .stats { margin-left: auto; color: #bfdbfe; font-weight: 600; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 16px; margin-top: 16px; }
+    .image-wrap { min-height: 420px; height: min(68vh, 900px); display: grid; place-items: center; overflow: auto; border: 1px solid #334155; border-radius: 8px; background: #0b1220; padding: 12px; }
+    img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; }
+    .annotation { display: flex; flex-direction: column; gap: 12px; }
+    .file-title { font-weight: 700; overflow-wrap: anywhere; }
+    .meta { color: #93c5fd; font-size: .92rem; }
+    textarea { width: 100%; min-height: 250px; resize: vertical; border: 1px solid #475569; border-radius: 8px; padding: 12px; background: #0f172a; color: inherit; font: 16px/1.5 "Segoe UI", sans-serif; }
+    .help { font-size: .9rem; color: #94a3b8; }
+    .status { min-height: 1.5em; color: #a7f3d0; }
+    .review-state { color: #fde68a; font-weight: 650; }
+    .small { font-size: .88rem; color: #94a3b8; }
+    @media (max-width: 850px) { main { padding: 14px; } .workspace { grid-template-columns: 1fr; } .image-wrap { height: 48vh; min-height: 260px; } .stats { width: 100%; margin-left: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Anotação local para avaliar OCR</h1>
+      <p>Revise o texto diretamente na imagem e monte referências para calcular CER/WER. Não use a saída do OCR como gabarito sem conferência humana.</p>
+    </header>
+    <section class="notice privacy" aria-label="Privacidade">
+      <strong>Privado e offline:</strong> a página não faz conexões de rede e só lê os arquivos que você selecionar. As transcrições ficam apenas na memória desta aba; exporte um CSV para guardá-las. Fechar a aba sem exportar descarta as alterações.
+    </section>
+    <section class="panel">
+      <div class="row">
+        <label class="file-picker" for="folder-input">Selecionar pasta de imagens</label>
+        <input id="folder-input" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp" webkitdirectory multiple>
+        <label class="file-picker" for="manifest-input">Importar manifesto CSV (opcional)</label>
+        <input id="manifest-input" class="visually-hidden" type="file" accept=".csv,text/csv">
+        <span id="stats" class="stats" aria-live="polite">Nenhuma imagem carregada</span>
+      </div>
+      <p class="small">O manifesto pode fornecer `arquivo`, `paper_type` e `defeito`; se também tiver `texto`, as referências existentes serão carregadas.</p>
+    </section>
+
+    <section class="workspace" aria-label="Área de anotação">
+      <article class="panel">
+        <div class="row">
+          <button id="previous" type="button" disabled>← Anterior</button>
+          <button id="next" type="button" disabled>Próxima →</button>
+          <button id="next-empty" type="button" disabled>Próxima pendente</button>
+          <label class="small" for="zoom">Zoom</label>
+          <input id="zoom" type="range" min="50" max="250" value="100" disabled>
+          <span id="zoom-label" class="small">100%</span>
+        </div>
+        <div class="image-wrap"><img id="preview" alt="Imagem selecionada para transcrição" hidden></div>
+      </article>
+      <article class="panel annotation">
+        <div id="file-title" class="file-title">Selecione uma pasta para começar</div>
+        <div id="metadata" class="meta"></div>
+        <label for="transcription"><strong>Transcrição conferida</strong></label>
+        <textarea id="transcription" placeholder="Digite o texto exatamente como aparece. Use quebras de linha quando forem importantes." disabled></textarea>
+        <p id="review-state" class="review-state" role="status" aria-live="polite"></p>
+        <p class="help">O texto fica apenas na memória desta aba. Para concluir uma página sem texto, marque-a como em branco ou ilegível; assim ela não volta à fila de pendências. Esses casos não entram no CER/WER.</p>
+        <div class="row">
+          <button id="export" class="primary" type="button" disabled>Exportar CSV de referências</button>
+          <button id="mark-blank" type="button" disabled>Marcar em branco</button>
+          <button id="mark-illegible" type="button" disabled>Marcar ilegível</button>
+          <button id="clear" type="button" disabled>Limpar transcrição</button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </article>
+    </section>
+    <footer class="small">Atalho: Ctrl+Enter confirma a transcrição digitada; Alt+←/→ navega. O CSV registra `status_revisao` separadamente do texto. Para avaliar, use-o como `manifesto.csv` em uma cópia de trabalho do corpus.</footer>
+  </main>
+  <script src="ocr-reference-annotator.js"></script>
+</body>
+</html>

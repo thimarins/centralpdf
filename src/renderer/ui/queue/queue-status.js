@@ -4,12 +4,10 @@
     dom,
     windowApi,
     icon,
-    fluentIcon,
     safeProgress,
     formatDuration,
     escapeHtml,
     buildFeedbackMessage,
-    QUEUE_UI_THRESHOLDS,
     addPulseTemporarily,
     toneIcon,
     notify,
@@ -39,6 +37,7 @@
   const pendingQueueStartToasts = new Map();
   const announcedTerminalTasks = new Set();
   let recentHistoryMenuFilter = 'all';
+  let recentHistoryTrigger = null;
 
   function clearPendingQueueStartToast(taskId) {
     const pending = pendingQueueStartToasts.get(taskId);
@@ -117,16 +116,17 @@
     if (outputPath) {
       const actions = [
         {
-          label: 'Abrir arquivo final',
-          description: 'Abrir o documento pronto agora.',
+          label: 'Abrir documento',
+          description: 'Ver o resultado agora.',
           icon: 'document-arrow-right',
+          primary: true,
           onAction: () => openPathSafely(outputPath, 'Abrir arquivo final', 'O arquivo gerado não existe mais.')
         }
       ];
 
       actions.push({
         label: 'Abrir pasta',
-        description: 'Ver o arquivo pronto na pasta de saída.',
+        description: 'Mostrar onde o arquivo foi salvo.',
         icon: 'folder-open',
         onAction: () => revealPathSafely(outputPath, 'Abrir pasta', 'A pasta do arquivo gerado não existe mais.')
       });
@@ -166,19 +166,9 @@
     const outputPath = task.result?.outputPath || task.result?.firstOutputPath || '';
     if (!outputPath || typeof windowApi.getFileInfo !== 'function') return '';
     const info = await windowApi.getFileInfo(outputPath);
-    if (!info?.success) return `Caminho completo: ${outputPath}`;
-    const createdAt = info.createdAt
-      ? new Date(info.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
-      : 'não informado';
-    const modifiedAt = info.modifiedAt
-      ? new Date(info.modifiedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })
-      : 'não informado';
-    return [
-      `Arquivo: ${info.name || outputPath.split(/[\\/]/).pop()}`,
-      `Extensão: ${info.extension || 'sem extensão'} • Tamanho: ${formatOutputFileSize(info.size)}`,
-      `Criado em: ${createdAt} • Modificado em: ${modifiedAt}`,
-      `Caminho completo: ${info.path || outputPath}`
-    ].join('\n');
+    const fileName = info?.success ? info.name || outputPath.split(/[\\/]/).pop() : outputPath.split(/[\\/]/).pop();
+    const size = info?.success ? ` • ${formatOutputFileSize(info.size)}` : '';
+    return `Arquivo: ${fileName}${size}`;
   }
 
   function getTaskStatusClass(task) {
@@ -426,6 +416,11 @@
     dom.processedHistoryModal?.removeAttribute('style');
     const historyButton = document.getElementById('btn-dashboard-processed-history');
     historyButton?.setAttribute('aria-expanded', 'false');
+    const trigger = recentHistoryTrigger || historyButton;
+    recentHistoryTrigger = null;
+    if (trigger && document.contains(trigger)) {
+      trigger.focus();
+    }
   }
 
   function positionRecentProcessedModal(anchorElement) {
@@ -455,8 +450,9 @@
       return;
     }
 
+    recentHistoryTrigger = anchorElement || document.getElementById('btn-dashboard-processed-history') || document.activeElement;
     dom.processedHistoryModal.classList.remove('hidden');
-    positionRecentProcessedModal(anchorElement || document.getElementById('btn-dashboard-processed-history'));
+    positionRecentProcessedModal(recentHistoryTrigger);
     updateRecentProcessedFilterButton();
     await renderRecentProcessedModalList();
     dom.processedHistoryModalClose?.focus();
@@ -477,7 +473,7 @@
 
     const confirmed = await new Promise((resolve) => {
       if (typeof showCustomConfirmModal !== 'function') {
-        resolve(window.confirm('Limpar todas as últimas atividades? Esta ação apaga apenas a lista do aplicativo.'));
+        resolve(false);
         return;
       }
 
@@ -564,12 +560,16 @@
   }
 
   function getTaskNarrative(task) {
+    if (task.status === 'running' && task.cancellationRequested) {
+      return 'Cancelamento solicitado. O aplicativo está encerrando a etapa atual com segurança.';
+    }
+    if (task.status === 'running' && task.timeoutRequested) {
+      return 'O tempo de processamento foi excedido. O aplicativo está encerrando a etapa atual com segurança.';
+    }
     if (task.status === 'running' && (task.elapsedMs > 45000 || task.totalItems > 8)) {
       return buildFeedbackMessage('longRunning', { seed: task.id });
     }
-    if (task.status === 'running') {
-      return buildFeedbackMessage('queued', { seed: task.id });
-    }
+    if (task.status === 'running') return '';
     if (task.status === 'completed') {
       return buildFeedbackMessage(task.elapsedMs > 90000 || task.totalItems > 10 ? 'successLarge' : 'success', { seed: task.id });
     }
@@ -577,7 +577,7 @@
     if (task.status === 'timeout') return buildFeedbackMessage('error', { seed: `${task.id}-timeout` });
     if (task.status === 'failed') return buildFeedbackMessage('error', { seed: `${task.id}-failed` });
     if (task.status === 'interrupted') return buildFeedbackMessage('recovery', { seed: task.id });
-    return buildFeedbackMessage('queued', { seed: task.id });
+    return 'Aguardando para começar.';
   }
 
   function syncQueueFeedback(statusList, previousStatusList = []) {
@@ -647,16 +647,48 @@
               actions: workflowActions
             }] : [])
           ];
-          const completionMessage = workflowActions.length > 0
-            ? 'Seu arquivo ficou pronto. Escolha abaixo o próximo passo que deseja fazer com este mesmo documento.'
+          const adaptiveOcrSteps = task.type === 'ocr' ? [
+            Number(task.result?.orientationCorrections) > 0 ? `orientação/inclinação em ${task.result.orientationCorrections} página(s)` : '',
+            Number(task.result?.preprocessingPages) > 0 ? `melhoria da imagem em ${task.result.preprocessingPages} página(s)` : ''
+          ].filter(Boolean) : [];
+          const orientationSummary = adaptiveOcrSteps.length
+            ? `Correção adaptativa aplicada: ${adaptiveOcrSteps.join(' e ')}. A imagem original não foi alterada.`
+            : '';
+          const recognizedOcrPages = Math.max(0, Number(task.result?.recognizedPages) || 0);
+          const skippedOcrPages = Math.max(0, Number(task.result?.skippedPages) || 0);
+          const unselectedOcrPages = Math.max(0, Number(task.result?.unselectedPages) || 0);
+          const noTextOcrPages = Math.max(0, Number(task.result?.noTextPages) || 0);
+          const failedOcrFiles = Math.max(0, Number(task.result?.failedFiles) || 0);
+          const averageOcrConfidence = Number.isFinite(task.result?.averageOcrConfidence)
+            ? Math.round(task.result.averageOcrConfidence)
+            : null;
+          const ocrSummary = task.type === 'ocr' && Number(task.result?.pageCount) > 0
+            ? [
+              `${recognizedOcrPages} ${recognizedOcrPages === 1 ? 'página com texto reconhecido' : 'páginas com texto reconhecido'}`,
+              skippedOcrPages ? `${skippedOcrPages} ${skippedOcrPages === 1 ? 'página já tinha texto' : 'páginas já tinham texto'}` : '',
+              unselectedOcrPages ? `${unselectedOcrPages} fora do intervalo` : '',
+              noTextOcrPages ? `${noTextOcrPages} sem texto reconhecível` : '',
+              failedOcrFiles ? `${failedOcrFiles} ${failedOcrFiles === 1 ? 'arquivo com falha' : 'arquivos com falha'}` : '',
+              averageOcrConfidence !== null ? `confiança média ${averageOcrConfidence}%` : ''
+            ].filter(Boolean).join(' • ')
+            : '';
+          const baseCompletionMessage = workflowActions.length > 0
+              ? 'Documento pronto. Escolha o que deseja fazer em seguida.'
             : completionActions.length > 0
-              ? 'Seu arquivo ficou pronto. Você pode abrir o resultado agora.'
+              ? 'Documento pronto. Você pode abrir o resultado agora.'
               : 'Tudo certo. A operação terminou com sucesso.';
+          const completionMessage = [baseCompletionMessage, ocrSummary, orientationSummary]
+            .filter(Boolean)
+            .join('\n');
+          const resultWarnings = Array.isArray(task.result?.warnings) ? task.result.warnings.filter((item) => typeof item === 'string' && item.trim()) : [];
+          const warningSummary = resultWarnings.length
+            ? `\n\nAvisos (${resultWarnings.length}):\n${resultWarnings.slice(0, 3).join('\n')}${resultWarnings.length > 3 ? `\nE mais ${resultWarnings.length - 3} aviso(s).` : ''}`
+            : '';
           const announceCompletion = (message) => notify({
             id: `queue-complete-${task.id}`,
-            tone: 'success',
-            title: `${task.name} concluído`,
-            message,
+            tone: resultWarnings.length ? 'warning' : 'success',
+            title: resultWarnings.length ? `${task.name} concluído com avisos` : `${task.name} concluído`,
+            message: `${message}${warningSummary}`,
             duration: 20000,
             actions: toastActions,
             actionSections,
@@ -746,6 +778,8 @@
   }
 
   function renderTaskStatus(task) {
+    if (task.status === 'running' && task.cancellationRequested) return 'Cancelando';
+    if (task.status === 'running' && task.timeoutRequested) return 'Encerrando';
     if (task.status === 'running') return 'Processando';
     if (task.status === 'completed') return 'Concluido';
     if (task.status === 'failed') return 'Falhou';
@@ -756,8 +790,8 @@
   }
 
   function formatQueueCount(activeCount) {
-    if (activeCount <= 0) return 'Sem fila';
-    return activeCount === 1 ? '1 em fila' : `${activeCount} em fila`;
+    if (activeCount <= 0) return 'Sem tarefas ativas';
+    return activeCount === 1 ? '1 tarefa ativa' : `${activeCount} tarefas ativas`;
   }
 
   function buildQueueSummary(statusList) {
@@ -793,24 +827,16 @@
     return rawProgress;
   }
 
-  function formatThroughput(task) {
-    if (!task.throughputItemsPerMinute || task.throughputItemsPerMinute <= 0) return '';
-    return task.totalItems > 1
-      ? `${task.throughputItemsPerMinute}/arquivo min`
-      : `${task.throughputItemsPerMinute}%/min`;
-  }
-
   function buildTaskMeta(task) {
     const isStalled = Number(task.stalledMs || 0) >= 12000;
     const parts = [];
     if (task.elapsedMs) parts.push(`Tempo ${formatDuration(task.elapsedMs)}`);
-    if (!isStalled && Number.isFinite(task.etaSeconds) && task.etaSeconds !== null) {
-      parts.push(`ETA ${formatDuration(task.etaSeconds * 1000)}`);
+    if (!isStalled && Number(task.elapsedMs) >= 10000 && Number.isFinite(task.etaSeconds) && task.etaSeconds !== null) {
+      parts.push(`Restante aprox. ${formatDuration(task.etaSeconds * 1000)}`);
     }
-    if (task.memoryMb) parts.push(`RAM ${task.memoryMb} MB`);
-    const throughputLabel = formatThroughput(task);
-    if (!isStalled && throughputLabel) parts.push(`Ritmo ${throughputLabel}`);
-    if (task.maxAttempts > 1) parts.push(`Tentativa ${task.attempt}/${task.maxAttempts}`);
+    if (Number(task.attempt) > 1 && task.maxAttempts > 1) {
+      parts.push(`Tentativa ${task.attempt} de ${task.maxAttempts}`);
+    }
     return { text: parts.join(' - '), isStalled };
   }
 
@@ -863,7 +889,7 @@
             </div>
           ` : ''}
           ${task.error ? `<span class="task-error-msg">${escapeHtml(task.error)}</span>` : ''}
-          ${(task.status === 'running' || task.status === 'pending') ? `<button class="btn-danger-text btn-sm" data-cancel-id="${escapeHtml(task.id)}">Cancelar</button>` : ''}
+          ${((task.status === 'running' && !task.cancellationRequested && !task.timeoutRequested) || task.status === 'pending') ? `<button class="btn-danger-text btn-sm" data-cancel-id="${escapeHtml(task.id)}">Cancelar</button>` : ''}
         </div>
       `;
     }).join('');

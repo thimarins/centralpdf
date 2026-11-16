@@ -19,7 +19,8 @@ Versão atual de fechamento da V1: `1.5`.
 
 - converter arquivos para PDF em lote (`JPG`, `JPEG`, `PNG`, `DOCX`, `XLSX`), sem LibreOffice
 - assinar PDF com assinatura visual simples, iniciais, data, texto livre e selo
-- conversão de PDF textual para Word (`DOCX`) ou texto estruturado, sem OCR
+- OCR local para PDF/imagem, com saída em PDF pesquisável ou TXT
+- conversão de PDF para Word (`DOCX`) ou texto estruturado; OCR opcional para páginas digitalizadas
 - mescla de múltiplos PDFs
 - separação por página, intervalo e tamanho apr?ximado
 - organização de páginas com reorder, duplicação, remoção e rotação
@@ -38,6 +39,11 @@ Versão atual de fechamento da V1: `1.5`.
 - não existe auto-update
 - não existe serviço residente
 - não existe telemetria remota
+- OCR usa modelos locais de português e inglês; documentos e texto não são enviados à internet
+
+## OCR
+
+Consulte o [Guia de OCR](OCR.md) para formatos suportados, uso e limitações, o [Relatório de entrega e aceite](OCR-delivery-report.md) para o status requisito a requisito, e a [Matriz de situação do OCR](OCR-implementation-status.md) para evidências e histórico. TIFF multipágina, busca OCR e sugestões OCR para ocultação estão implementados; os documentos distinguem testes sintéticos dos que ainda precisam de corpus corporativo real.
 
 ## Stack Utilizada
 
@@ -49,7 +55,7 @@ Versão atual de fechamento da V1: `1.5`.
 - docx
 - mammoth
 - xlsx
-- Fluent UI System Icons
+- Lucide
 
 ## Requisitos Mínimos
 
@@ -65,7 +71,7 @@ Versão atual de fechamento da V1: `1.5`.
 - acima de `1 GB` o app ativa modo otimizado quando aplicável
 - o projeto prioriza estabilidade e degradação elegante, não edição irrestrita de documentos extremos
 - `pdf-lib` continua sendo o principal limitador técnico para documentos muito grandes
-- a conversão para Word funciona melhor com PDFs digitais/textuais; documentos escaneados não são convertidos corretamente sem OCR
+- a conversão para Word funciona melhor com PDFs digitais/textuais; pode usar OCR local opcional em páginas sem texto
 
 ## Execução Rápida e Restrições de UNC Path
 

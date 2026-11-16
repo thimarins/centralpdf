@@ -4,6 +4,7 @@ import {
   revokeImagePreviewUrl,
   shouldUseOptimizedImageMode
 } from "./thumbnail-service.js";
+import { formatDocumentMeta } from '../document-info.js';
 
 const SUPPORTED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".docx", ".xlsx"]);
 
@@ -16,14 +17,15 @@ export function createImageToPdfWorkspaceController(deps) {
   const {
     state,
     document,
-    icon,
     notify,
+    icon,
     showFeedbackBanner,
     clearFeedbackBanner,
     buildFeedbackMessage,
     toneIcon,
     formatBytes
   } = deps;
+  let keyboardBindingsReady = false;
 
   function isSupportedInputFile(file) {
     return SUPPORTED_EXTENSIONS.has(getFileExtension(file?.name || ""));
@@ -40,7 +42,10 @@ export function createImageToPdfWorkspaceController(deps) {
         name: file.name,
         size: file.size,
         path: file.path,
-        fileObject: file.fileObject || null
+          fileObject: file.fileObject || null,
+        rotation: Number(file.rotation) || 0,
+        validationStatus: file.validationStatus || "valid",
+        validationMessage: file.validationMessage || "Pronto para conversão."
       })),
       outputName: document.getElementById("images-pdf-output-name")?.value || ""
     });
@@ -82,15 +87,20 @@ export function createImageToPdfWorkspaceController(deps) {
         <div class="action-file-info">
           <div class="image-thumb-shell">
             ${previewEnabled && file.previewUrl && !isOfficeDocument(file)
-              ? `<img src="${file.previewUrl}" alt="Pré-visualização de ${file.name}" loading="lazy" class="image-thumb-preview">`
+              ? `<img src="${file.previewUrl}" alt="Pré-visualização de ${file.name}" loading="lazy" class="image-thumb-preview" style="transform: rotate(${Number(file.rotation) || 0}deg)">`
               : `<div class="image-thumb-placeholder">${icon(isOfficeDocument(file) ? "document" : "file-image", { size: 22 })}</div>`}
           </div>
           <div class="selected-file-meta">
             <span class="action-file-name" title="${file.path}">${file.name}</span>
-            <span class="action-file-size">${formatBytes(file.size)}</span>
+            <span class="file-validation-status file-validation-${file.validationStatus || 'valid'}" title="${file.validationMessage || ''}">${({ pending: "Verificando…", valid: "Pronto", protected: "Protegido", invalid: "Com problema" })[file.validationStatus || 'valid'] || "Pronto"}</span>
+            <span class="action-file-size">${formatDocumentMeta(formatBytes, file)}</span>
           </div>
         </div>
         <div class="action-file-controls">
+          ${isOfficeDocument(file) ? "" : `
+            <button class="btn-secondary btn-sm btn-icon rotate-left-icon" data-image-rotate-left="${index}" title="Girar esta imagem 90 graus para a esquerda" aria-label="Girar ${file.name} para a esquerda">${icon("rotate-cw")}</button>
+            <button class="btn-secondary btn-sm btn-icon" data-image-rotate-right="${index}" title="Girar esta imagem 90 graus para a direita" aria-label="Girar ${file.name} para a direita">${icon("rotate-cw")}</button>
+          `}
           <button class="btn-secondary btn-sm btn-icon" data-image-move-up="${index}" title="Mover este arquivo uma posição para cima" ${index === 0 ? "disabled" : ""}>${icon("chevronUp")}</button>
           <button class="btn-secondary btn-sm btn-icon" data-image-move-down="${index}" title="Mover este arquivo uma posição para baixo" ${index === state.imagePdfFiles.length - 1 ? "disabled" : ""}>${icon("chevronDown")}</button>
           <button class="btn-danger-text btn-sm btn-icon" data-image-remove="${index}" title="Remover este arquivo da fila">${icon("remove")}</button>
@@ -172,6 +182,14 @@ export function createImageToPdfWorkspaceController(deps) {
       button.addEventListener("click", () => moveImage(Number(button.getAttribute("data-image-move-down")), 1));
     });
 
+    list.querySelectorAll("[data-image-rotate-left]").forEach((button) => {
+      button.addEventListener("click", () => rotateImage(Number(button.getAttribute("data-image-rotate-left")), -90));
+    });
+
+    list.querySelectorAll("[data-image-rotate-right]").forEach((button) => {
+      button.addEventListener("click", () => rotateImage(Number(button.getAttribute("data-image-rotate-right")), 90));
+    });
+
     list.querySelectorAll("[data-image-index]").forEach((item) => {
       item.addEventListener("click", (event) => {
         if (event.target.closest("button")) return;
@@ -249,7 +267,10 @@ export function createImageToPdfWorkspaceController(deps) {
         size: file.size,
         path: file.path || "",
         previewUrl: isOfficeDocument(file) ? "" : createImagePreviewUrl(file),
-        fileObject: file
+        fileObject: file,
+        rotation: 0,
+        validationStatus: file.path ? "pending" : "valid",
+        validationMessage: file.path ? "Verificando arquivo…" : "Pronto para conversão local."
       });
     });
 
@@ -258,6 +279,45 @@ export function createImageToPdfWorkspaceController(deps) {
     state.imagePdfFiles.push(...newEntries);
     setSuggestedOutputName();
     renderImageList();
+    if (window.api?.preflightBatchFiles) {
+      const paths = newEntries.map((file) => file.path).filter(Boolean);
+      if (paths.length > 0) {
+        window.api.preflightBatchFiles({ type: "files-to-pdf", files: paths })
+          .then((result) => {
+            const byPath = new Map((result.results || []).map((item) => [item.path, item]));
+            state.imagePdfFiles.forEach((file) => {
+              const validation = byPath.get(file.path);
+              if (!validation) return;
+              file.validationStatus = validation.status;
+              file.validationMessage = validation.message;
+            });
+            renderImageList();
+            const validations = result.results || [];
+            const invalid = validations.filter((item) => item.status !== "valid");
+            const valid = validations.length - invalid.length;
+            if (invalid.length > 0) {
+              notify({
+                tone: "warning",
+                title: "Arquivos adicionados com atenção",
+                message: `${valid} arquivo(s) pronto(s); ${invalid.length} arquivo(s) precisam ser revisado(s).`,
+                detail: invalid.slice(0, 3).map((item) => `${item.name}: ${item.message}`).join(" • "),
+                important: true
+              });
+            } else if (valid > 0) {
+              notify({ tone: "success", title: "Arquivos adicionados", message: `${valid} arquivo(s) verificado(s) e pronto(s) para conversão.` });
+            }
+          })
+          .catch(() => {
+            state.imagePdfFiles.forEach((file) => {
+              if (file.validationStatus === "pending") {
+                file.validationStatus = "invalid";
+                file.validationMessage = "Não foi possível verificar este arquivo.";
+              }
+            });
+            renderImageList();
+          });
+      }
+    }
   }
 
   function moveImage(index, delta) {
@@ -265,6 +325,15 @@ export function createImageToPdfWorkspaceController(deps) {
     if (targetIndex < 0 || targetIndex >= state.imagePdfFiles.length) return;
     captureUndoState();
     [state.imagePdfFiles[index], state.imagePdfFiles[targetIndex]] = [state.imagePdfFiles[targetIndex], state.imagePdfFiles[index]];
+    renderImageList();
+  }
+
+  function rotateImage(index, delta) {
+    const item = state.imagePdfFiles[index];
+    if (!item || isOfficeDocument(item)) return;
+    captureUndoState();
+    item.rotation = (((Number(item.rotation) || 0) + delta) % 360 + 360) % 360;
+    state.imagePdfSelectedIndex = index;
     renderImageList();
   }
 
@@ -319,12 +388,36 @@ export function createImageToPdfWorkspaceController(deps) {
   function setup() {
     document.getElementById("btn-images-pdf-clear")?.addEventListener("click", () => clearWorkspace({ preserveUndo: true }));
     document.getElementById("btn-images-pdf-undo")?.addEventListener("click", restoreUndoState);
+    if (!keyboardBindingsReady) {
+      keyboardBindingsReady = true;
+      document.addEventListener("keydown", (event) => {
+        const tab = document.getElementById("tab-images-to-pdf");
+        if (!tab?.classList.contains("active") || state.imagePdfFiles.length === 0) return;
+
+        const target = event.target;
+        const isEditableTarget = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+        if (isEditableTarget) return;
+
+        if (event.key === "Escape" && state.imagePdfSelectedIndex !== null) {
+          event.preventDefault();
+          state.imagePdfSelectedIndex = null;
+          renderImageList();
+          return;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
+          event.preventDefault();
+          restoreUndoState();
+        }
+      });
+    }
     updateUndoButton();
   }
 
   return {
     setup,
     addImageFiles,
+    rotateImage,
     clearWorkspace,
     getPendingMessage
   };

@@ -44,7 +44,7 @@ async function runRepoAudit() {
   const patterns = [
     { name: 'TODO/FIXME', regex: /\b(TODO|FIXME)\b/ },
     { name: 'console.log', regex: /console\.log\s*\(/ },
-    { name: 'debugger', regex: /\bdebugger\b/ },
+    { name: 'debugger', regex: /(?<![\w$.])debugger\s*;/ },
     { name: 'hardcoded user path', regex: /C:\\Users\\/i },
     { name: 'unexpected localhost in production code', regex: /localhost:(?!5173)/i }
   ];

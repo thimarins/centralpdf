@@ -26,33 +26,62 @@ function listRunningAppProcesses() {
 
   return new Promise((resolve) => {
     let output = '';
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const timeout = setTimeout(() => {
+      processList.kill();
+      finish([]);
+    }, 5000);
     processList.stdout.on('data', (chunk) => {
       output += String(chunk);
     });
     processList.on('exit', () => {
+      clearTimeout(timeout);
       try {
         const parsed = output.trim() ? JSON.parse(output.trim()) : [];
-        resolve(Array.isArray(parsed) ? parsed : [parsed]);
+        finish(Array.isArray(parsed) ? parsed : [parsed]);
       } catch {
-        resolve([]);
+        finish([]);
       }
     });
-    processList.on('error', () => resolve([]));
+    processList.on('error', () => {
+      clearTimeout(timeout);
+      finish([]);
+    });
   });
+}
+
+function sameExecutable(candidatePath) {
+  if (!candidatePath) return false;
+  return path.resolve(candidatePath).toLowerCase() === exePath.toLowerCase();
 }
 
 function killProcessTree(pid) {
   return new Promise((resolve) => {
     const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
-    killer.on('exit', () => resolve());
-    killer.on('error', () => resolve());
+    const timeout = setTimeout(() => {
+      killer.kill();
+      resolve();
+    }, 5000);
+    killer.on('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    killer.on('error', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
   });
 }
 
 async function clearLingeringProcesses() {
   const running = await listRunningAppProcesses();
   for (const item of running) {
-    if (item?.ProcessId) {
+    if (item?.ProcessId && sameExecutable(item.ExecutablePath)) {
       await killProcessTree(item.ProcessId);
     }
   }
@@ -96,11 +125,18 @@ async function runOnce(index, attempt = 1) {
   await sleep(1200);
 
   const tracePath = path.join(os.tmpdir(), `central-pdf-startup-${process.pid}-${index}.jsonl`);
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), `central-pdf-startup-data-${process.pid}-${index}-`));
   try {
     fs.rmSync(tracePath, { force: true });
   } catch {}
 
-  const child = spawn(exePath, [], {
+  const child = spawn(exePath, [
+    '--disable-gpu',
+    '--no-sandbox',
+    '--user-data-dir', userDataDir,
+    '--',
+    `--central-pdf-startup-trace=${tracePath}`
+  ], {
     detached: false,
     stdio: 'ignore',
     windowsHide: true,
@@ -110,10 +146,18 @@ async function runOnce(index, attempt = 1) {
     }
   });
 
-  const entries = await waitForTrace(tracePath, child);
-  await killProcessTree(child.pid);
-  await clearLingeringProcesses();
-  await sleep(1000);
+  let entries;
+  try {
+    entries = await waitForTrace(tracePath, child);
+  } finally {
+    await killProcessTree(child.pid);
+    await clearLingeringProcesses();
+    await sleep(1000);
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+      fs.rmSync(tracePath, { force: true });
+    } catch {}
+  }
 
   if (!entries && attempt < 2) {
     await sleep(1500);
@@ -147,7 +191,7 @@ async function main() {
   }
 
   const runningProcesses = await listRunningAppProcesses();
-  const conflictingProcesses = runningProcesses.filter((item) => item.ExecutablePath && path.resolve(item.ExecutablePath) === exePath);
+  const conflictingProcesses = runningProcesses.filter((item) => item.ExecutablePath && sameExecutable(item.ExecutablePath));
   if (conflictingProcesses.length) {
     throw new Error('Feche o Central PDF antes de rodar o benchmark de abertura para evitar medi\u00E7\u00F5es inv\u00E1lidas.');
   }
@@ -161,6 +205,11 @@ async function main() {
   const averageMs = validRuns.length
     ? Math.round(validRuns.reduce((sum, item) => sum + item.totalMs, 0) / validRuns.length)
     : null;
+  const minimumSuccessfulRuns = Math.max(1, Math.ceil(runs * 0.8));
+  const maximumAverageMs = 15000;
+  const ok = validRuns.length >= minimumSuccessfulRuns &&
+    averageMs !== null &&
+    averageMs <= maximumAverageMs;
 
   const reportPath = writeReport('startup-benchmark.md', [
     '# Startup Benchmark',
@@ -171,6 +220,7 @@ async function main() {
     '',
     `Rodadas v\u00E1lidas: ${validRuns.length}/${results.length}`,
     averageMs !== null ? `M\u00E9dia at\u00E9 renderer-bootstrap-complete: ${averageMs} ms` : 'M\u00E9dia indispon\u00EDvel.',
+    `Crit\u00E9rio: ao menos ${minimumSuccessfulRuns}/${runs} rodadas v\u00E1lidas e m\u00E9dia de at\u00E9 ${maximumAverageMs} ms.`,
     '',
     '| Rodada | Status | Total | App ready | Janela criada | HTML carregado | Pronta p/ mostrar |',
     '| --- | --- | --- | --- | --- | --- | --- |',
@@ -178,12 +228,16 @@ async function main() {
   ]);
 
   console.log(JSON.stringify({
-    ok: true,
+    ok,
     exePath,
     averageMs,
     results,
     reportPath
   }, null, 2));
+
+  if (!ok) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

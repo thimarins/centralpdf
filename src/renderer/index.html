@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; font-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; font-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';">
   <title>Central PDF</title>
   <script type="module" src="./app.js"></script>
   <link rel="stylesheet" href="./style.css">
@@ -33,7 +33,6 @@
     </aside>
 
     <main class="workspace">
-      <section id="app-feedback-banner" class="feedback-banner" aria-live="polite"></section>
       <section id="app-toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></section>
 
       <header class="workspace-toolbar">
@@ -41,18 +40,19 @@
           <span class="workspace-brand-title">Central PDF</span>
         </div>
         <div class="workspace-toolbar-actions">
-          <button id="btn-dashboard-processed-history" class="dashboard-processed-badge dashboard-processed-button" type="button" title="Abrir suas últimas atividades" aria-label="Abrir suas últimas atividades">
-            <span class="processed-badge-icon" data-icon="history"></span>
-            <span class="processed-badge-label">Últimas atividades:</span>
-            <span id="dashboard-processed-count" class="processed-badge-count">0</span>
-          </button>
-          <button id="btn-dashboard-open-default-dir" class="dashboard-theme-btn" type="button" title="Abrir a pasta personalizada de destino" aria-label="Abrir pasta personalizada de destino"></button>
-          <button id="btn-dashboard-theme-toggle" class="dashboard-theme-btn" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema"></button>
           <label class="dashboard-search workspace-search" for="dashboard-search-input">
             <span class="dashboard-search-icon" data-icon="search"></span>
-            <input type="text" id="dashboard-search-input" placeholder="Buscar ferramenta ou ação">
-            <button id="dashboard-search-clear" class="dashboard-search-clear hidden" type="button" aria-label="Limpar pesquisa" title="Limpar pesquisa" data-icon="x"></button>
+            <input type="text" id="dashboard-search-input" placeholder="Buscar ferramenta, ajuda ou ação" aria-label="Buscar ferramenta, ajuda ou ação">
           </label>
+          <div class="toolbar-utility-cluster">
+            <button id="btn-dashboard-processed-history" class="dashboard-processed-badge dashboard-processed-button" type="button" title="Abrir suas últimas atividades" aria-label="Abrir suas últimas atividades">
+              <span class="processed-badge-icon" data-icon="history"></span>
+              <span class="processed-badge-label">Últimas atividades:</span>
+              <span id="dashboard-processed-count" class="processed-badge-count">0</span>
+            </button>
+            <button id="btn-dashboard-open-default-dir" class="dashboard-theme-btn" type="button" title="Abrir pasta de destino" aria-label="Abrir pasta de destino"></button>
+            <button id="btn-dashboard-theme-toggle" class="dashboard-theme-btn" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema"></button>
+          </div>
         </div>
       </header>
 
@@ -80,7 +80,7 @@
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="list"></span><span>Arquivos selecionados</span></h2>
               <p>Arraste para reorganizar ou use as ações rápidas de ordem.</p>
             </div>
-            <div class="images-pdf-header-actions">
+            <div class="images-pdf-header-actions file-selection-actions">
               <button id="btn-images-pdf-clear" class="btn-secondary btn-sm btn-icon-label btn-critical" data-icon="x" title="Limpa a lista atual de arquivos">Limpar</button>
               <button type="button" id="btn-images-pdf-add-more" class="btn-secondary btn-sm btn-icon-label" data-icon="cloud-upload">Adicionar arquivos</button>
             </div>
@@ -92,7 +92,7 @@
             <ul id="images-pdf-list" class="action-file-list"></ul>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--images-pdf border-top">
+          <div class="action-bar-settings action-bar-settings--images-pdf module-output-dock border-top">
             <div class="input-group images-pdf-output-group">
               <label for="images-pdf-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -105,6 +105,10 @@
               <label class="toggle">
                 <input type="checkbox" id="images-pdf-optimize" checked>
                 <span>Otimizar imagens (somente imagens)</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="images-pdf-searchable">
+                <span>Criar PDF pesquisável (OCR local)</span>
               </label>
               <label class="toggle">
                 <input type="checkbox" id="images-pdf-zip">
@@ -138,13 +142,16 @@
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="list"></span><span>Arquivos para Mesclar</span></h2>
               <p>Reordene antes de iniciar o processamento. PDFs e imagens podem ser misturados.</p>
             </div>
-            <button type="button" id="btn-merge-add-more" class="btn-secondary btn-sm btn-icon-label" data-icon="cloud-upload">Adicionar arquivos</button>
+            <div class="module-action-group file-selection-actions">
+              <button id="btn-merge-clear" class="btn-secondary btn-sm btn-icon-label btn-critical" type="button" data-icon="x" title="Remove todos os arquivos selecionados">Limpar</button>
+              <button type="button" id="btn-merge-add-more" class="btn-secondary btn-sm btn-icon-label" data-icon="cloud-upload">Adicionar arquivos</button>
+            </div>
           </div>
           <div id="merge-smart-summary" class="inline-optimized-hint" style="margin: 0 0 12px 0; display: none;"></div>
           <div class="file-list-scroll">
             <ul id="merge-file-list" class="action-file-list"></ul>
           </div>
-          <div class="action-bar-settings action-bar-settings--field-action">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock">
             <div class="input-group">
               <label for="merge-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -157,6 +164,10 @@
               <label class="toggle">
                 <input type="checkbox" id="merge-zip">
                 <span>Compactar (.zip)</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="merge-searchable-ocr">
+                <span>Criar PDF pesquisável (OCR local)</span>
               </label>
             </div>
             <div class="module-action-group module-action-group--primary">
@@ -188,6 +199,7 @@
               <span id="signature-file-meta" class="file-meta">Calculando...</span>
             </div>
             <div class="inline-actions">
+              <button id="btn-signature-fix-orientation" class="btn-secondary btn-sm btn-icon-label" data-icon="rotate-cw" title="Abrir este documento em Organizar Páginas para corrigir sua orientação">Corrigir orientação</button>
               <button id="btn-signature-change-file" class="btn-secondary btn-sm btn-icon-label" data-icon="folder-open">Trocar arquivo</button>
               <button id="btn-signature-clear-file" class="btn-secondary btn-sm btn-icon-label btn-critical" data-icon="x">Cancelar</button>
             </div>
@@ -197,31 +209,32 @@
             <div class="signature-controls-column">
               <div class="section-heading compact">
                 <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="list"></span><span>Campos de Assinatura</span></h2>
-                <p>Adicione campos visuais e arraste sobre a página.</p>
+                <p>Preencha um item e use o botão <strong>Adicionar</strong> ao lado para colocá-lo na página.</p>
               </div>
 
               <div class="settings-grid signature-config-grid">
                   <div class="input-group">
                     <label for="signature-typed-name">Nome digitado</label>
-                    <input type="text" id="signature-typed-name" value="" placeholder="Ex: Maria Souza">
+                    <div class="signature-input-action-row"><input type="text" id="signature-typed-name" value="" placeholder="Ex: Maria Souza"><button id="btn-add-signature-field" type="button" class="btn-secondary btn-icon-label btn-add-inline" data-icon="plus" title="Adicionar nome como assinatura" aria-label="Adicionar nome como assinatura">Adicionar</button></div>
                   </div>
                   <div class="input-group">
                     <label for="signature-initials">Iniciais</label>
-                    <input type="text" id="signature-initials" value="" maxlength="4" placeholder="Ex: MS">
+                    <div class="signature-input-action-row"><input type="text" id="signature-initials" value="" maxlength="4" placeholder="Ex: MS"><button id="btn-add-initials-field" type="button" class="btn-secondary btn-icon-label btn-add-inline" data-icon="plus" title="Adicionar iniciais" aria-label="Adicionar iniciais">Adicionar</button></div>
                   </div>
                 <div class="input-group">
                   <label for="signature-date-value">Data</label>
-                  <input type="date" id="signature-date-value">
+                  <div class="signature-input-action-row"><input type="date" id="signature-date-value"><button id="btn-add-date-field" type="button" class="btn-secondary btn-icon-label btn-add-inline" data-icon="plus" title="Adicionar data" aria-label="Adicionar data">Adicionar</button></div>
                 </div>
                 <div class="input-group">
                   <label for="signature-free-text">Texto livre</label>
-                  <input type="text" id="signature-free-text" value="Aprovado internamente" placeholder="Ex: Revisado pelo jurídico">
+                  <div class="signature-input-action-row"><input type="text" id="signature-free-text" value="Aprovado internamente" placeholder="Ex: Revisado pelo jurídico"><button id="btn-add-text-field" type="button" class="btn-secondary btn-icon-label btn-add-inline" data-icon="plus" title="Adicionar texto livre" aria-label="Adicionar texto livre">Adicionar</button></div>
                 </div>
                 <div class="input-group full-span">
                   <label for="signature-seal-input">Selo da empresa</label>
                   <input type="file" id="signature-seal-input" accept=".png,.jpg,.jpeg" class="file-input-detached-hidden">
                   <div class="file-picker-inline">
                     <button type="button" id="btn-signature-seal-picker" class="btn-secondary btn-icon-label" data-icon="stamp">Selecionar selo</button>
+                    <button type="button" id="btn-add-seal-field" class="btn-secondary btn-icon-label btn-add-inline" data-icon="plus" title="Adicionar selo selecionado" aria-label="Adicionar selo selecionado">Adicionar</button>
                     <span id="signature-seal-file-name" class="input-help">Nenhum arquivo selecionado.</span>
                   </div>
                   <span id="signature-seal-meta" class="input-help">PNG ou JPG com fundo transparente quando possível.</span>
@@ -241,23 +254,14 @@
                   <canvas id="signature-draw-canvas" width="700" height="220" aria-label="Area para desenhar assinatura"></canvas>
                   <div class="signature-draw-toolbar">
                     <button id="btn-clear-signature-draw" class="btn-secondary btn-icon-label btn-critical" data-icon="remove">Limpar desenho</button>
-                    <button id="btn-save-signature-draw" class="btn-primary btn-icon-label" data-icon="pen-line">Usar como assinatura</button>
+                  <button id="btn-save-signature-draw" class="btn-primary btn-icon-label" data-icon="pen-line">Usar e adicionar assinatura</button>
                   </div>
                 </div>
               </div>
 
-              <div class="signature-toolbar">
-                <button id="btn-add-signature-field" class="btn-secondary btn-icon-label" data-icon="pen-line">Adicionar assinatura</button>
-                <button id="btn-add-drawn-field" class="btn-secondary btn-icon-label" data-icon="pen-line">Adicionar assinatura desenhada</button>
-                <button id="btn-add-initials-field" class="btn-secondary btn-icon-label" data-icon="copy">Adicionar iniciais</button>
-                <button id="btn-add-date-field" class="btn-secondary btn-icon-label" data-icon="history">Adicionar data</button>
-                <button id="btn-add-text-field" class="btn-secondary btn-icon-label" data-icon="file">Adicionar texto</button>
-                <button id="btn-add-seal-field" class="btn-secondary btn-icon-label" data-icon="stamp">Adicionar selo</button>
-              </div>
-
               <div class="card signature-field-editor-card">
                 <div class="section-heading compact">
-                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="settings"></span><span>Campo Selecionado</span></h3>
+                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="settings"></span><span>Editar campo selecionado</span></h3>
                   <p>Redimensione pelo painel e reposicione arrastando sobre a página.</p>
                 </div>
                 <div id="signature-field-editor" class="signature-field-editor">
@@ -289,7 +293,7 @@
               </div>
             </div>
 
-            <div class="action-bar-settings action-bar-settings--output-layout border-top signature-footer-actions">
+            <div class="action-bar-settings action-bar-settings--output-layout module-output-dock border-top signature-footer-actions">
               <div class="input-group">
                 <label for="signature-output-name" class="input-label-with-icon">
                   <span class="input-label-icon" data-icon="file-text"></span>
@@ -306,6 +310,138 @@
               <div class="module-action-group module-action-group--primary">
                 <button id="btn-run-signature" class="btn-primary btn-icon-label" data-icon="pen-line">Aplicar Assinatura</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-ocr" class="tab-content">
+        <header class="tab-header">
+          <h1 class="title-with-icon"><span class="title-icon" data-icon="scan-text"></span><span>Reconhecer texto (OCR)</span></h1>
+          <p>Transforme documentos digitalizados em PDFs onde você pode pesquisar e selecionar o texto. O processamento acontece neste computador.</p>
+        </header>
+        <div class="card file-upload-area" id="ocr-dropzone">
+          <input type="file" id="ocr-file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff" class="file-input-hidden">
+          <div class="dropzone-prompt"><span class="dropzone-icon" data-icon="cloud-upload"></span><h3>Selecione ou arraste arquivos para reconhecer</h3><p>PDF, JPG, JPEG, PNG ou TIFF (inclui documentos com várias páginas). O original não é alterado.</p></div>
+        </div>
+        <div class="card hidden" id="ocr-settings-card">
+          <div class="section-heading"><h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="scan-text"></span><span>PDF pesquisável</span></h2><p>O Central PDF vai reconhecer o texto e criar uma cópia. O arquivo original permanece intacto.</p></div>
+          <p id="ocr-runtime-warning" class="ocr-runtime-warning hidden" role="status" aria-live="polite"></p>
+          <div class="section-heading-with-action ocr-files-heading">
+            <div class="section-heading compact">
+              <h3 id="ocr-files-title">Arquivos selecionados</h3>
+              <p id="ocr-files-subtitle">Adicione mais documentos ou limpe a seleção.</p>
+            </div>
+            <div class="module-action-group file-selection-actions ocr-file-actions">
+              <button id="btn-ocr-add-more" class="btn-secondary btn-sm btn-icon-label" type="button" data-icon="cloud-upload">Adicionar arquivos</button>
+              <button id="btn-ocr-clear" class="btn-secondary btn-sm btn-icon-label btn-critical" type="button" data-icon="x">Limpar</button>
+            </div>
+          </div>
+          <div class="file-list-scroll compact" id="ocr-file-list-container">
+            <ul id="ocr-file-list" class="action-file-list"></ul>
+          </div>
+          <section id="ocr-image-preview-card" class="card ocr-image-preview-card hidden" aria-labelledby="ocr-image-preview-title">
+            <div class="section-heading">
+              <h3 id="ocr-image-preview-title" class="section-title-with-icon"><span class="section-title-icon" data-icon="image"></span><span>Prévia da imagem</span></h3>
+              <p>Confira visualmente a imagem antes do reconhecimento. A prévia é local e não altera o arquivo.</p>
+            </div>
+            <label class="input-group" for="ocr-image-preview-file">Imagem selecionada<select id="ocr-image-preview-file"></select></label>
+            <div class="ocr-image-preview-frame"><img id="ocr-image-preview" alt="Prévia local da imagem selecionada" class="hidden"><p id="ocr-image-preview-status" class="ocr-image-preview-status" role="status" aria-live="polite"></p></div>
+          </section>
+          <section id="ocr-area-card" class="card ocr-area-card hidden" aria-labelledby="ocr-area-title">
+            <div class="section-heading ocr-area-heading">
+              <div class="ocr-area-heading-copy">
+                <h3 id="ocr-area-title" class="section-title-with-icon"><span class="section-title-icon" data-icon="scan-search"></span><span>Extrair texto de uma região</span></h3>
+                <p>Escolha um PDF, marque uma área da página e reconheça somente o trecho selecionado.</p>
+              </div>
+              <div class="ocr-preview-controls" aria-label="Controles do preview">
+                <div class="ocr-zoom-toolbar" aria-label="Controles de zoom do preview">
+                  <span class="ocr-zoom-label">Zoom</span>
+                  <button id="btn-ocr-area-zoom-out" class="btn-secondary btn-sm btn-icon" data-icon="minus" type="button" aria-label="Diminuir zoom" title="Diminuir zoom"></button>
+                  <input id="ocr-area-zoom-range" class="ocr-zoom-range" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom do preview" aria-valuemin="50" aria-valuemax="250" aria-valuenow="100">
+                  <button id="btn-ocr-area-zoom-in" class="btn-secondary btn-sm btn-icon" data-icon="plus" type="button" aria-label="Aumentar zoom" title="Aumentar zoom"></button>
+                  <span id="ocr-area-zoom-value" class="toolbar-chip" aria-live="polite">100%</span>
+                  <button id="btn-ocr-area-zoom-reset" class="btn-secondary btn-sm btn-icon-label" data-icon="rotate-ccw" type="button" aria-label="Voltar o zoom para 100%" title="Voltar ao tamanho original">100%</button>
+                </div>
+                <div class="ocr-area-navigation" aria-label="Navegação de páginas">
+                  <button id="btn-ocr-area-first" class="btn-secondary btn-sm btn-icon" type="button" data-icon="chevrons-left" disabled title="Primeira página" aria-label="Ir para a primeira página"></button>
+                  <button id="btn-ocr-area-prev" class="btn-secondary btn-sm btn-icon" type="button" data-icon="chevron-left" disabled title="Página anterior" aria-label="Ir para a página anterior"></button>
+                  <span id="ocr-area-page-label" class="status-pill">Sem página</span>
+                  <button id="btn-ocr-area-next" class="btn-secondary btn-sm btn-icon" type="button" data-icon="chevron-right" disabled title="Próxima página" aria-label="Ir para a próxima página"></button>
+                  <button id="btn-ocr-area-last" class="btn-secondary btn-sm btn-icon" type="button" data-icon="chevrons-right" disabled title="Última página" aria-label="Ir para a última página"></button>
+                </div>
+              </div>
+            </div>
+            <div class="ocr-area-split-layout">
+              <div class="ocr-area-controls-column">
+                <div class="ocr-area-file-selector-row"><label class="input-group ocr-area-file-picker">PDF para visualizar<select id="ocr-area-file"></select></label><div class="ocr-file-nav-buttons" aria-label="Navegação entre arquivos"><button id="btn-ocr-area-file-prev" class="btn-secondary btn-sm btn-icon" data-icon="chevron-left" type="button" title="Arquivo anterior" aria-label="Arquivo anterior" disabled></button><button id="btn-ocr-area-file-next" class="btn-secondary btn-sm btn-icon" data-icon="chevron-right" type="button" title="Próximo arquivo" aria-label="Próximo arquivo" disabled></button></div></div>
+                <div class="ocr-document-search" data-action-toolbar="auto" role="search" aria-label="Pesquisar no documento">
+                  <label class="input-group" for="ocr-document-search-input">Pesquisar texto no PDF<input id="ocr-document-search-input" type="search" maxlength="120" placeholder="Digite uma palavra ou frase" autocomplete="off"></label>
+                  <button id="btn-ocr-document-search" class="btn-secondary btn-sm btn-icon-label" type="button" data-icon="search" data-toolbar-priority="70">Pesquisar</button>
+                  <button id="btn-ocr-document-search-cancel" class="btn-danger btn-sm btn-icon-label hidden" type="button" data-icon="x" data-toolbar-priority="15">Cancelar pesquisa</button>
+                </div>
+                <p id="ocr-document-search-status" class="ocr-area-status" role="status" aria-live="polite">Pesquisa texto nativo e, quando necessário, reconhece páginas escaneadas localmente.</p>
+                <ol id="ocr-document-search-results" class="ocr-document-search-results" aria-label="Resultados da pesquisa"></ol>
+                <div class="ocr-area-actions">
+                  <button id="btn-ocr-area-draw" class="btn-secondary btn-icon-label" type="button" data-icon="scan-line">Selecionar região</button>
+                  <button id="btn-ocr-area-page" class="btn-secondary btn-icon-label" type="button" data-icon="maximize-2" title="Selecionar página inteira">Página inteira</button>
+                  <button id="btn-ocr-area-extract" class="btn-primary btn-icon-label" type="button" data-icon="scan-text" disabled>Reconhecer região</button>
+                  <button id="btn-ocr-area-cancel" class="btn-danger btn-sm btn-icon-label hidden" type="button" data-icon="x">Cancelar</button>
+                </div>
+                <p id="ocr-area-draw-hint" class="input-help">Ative “Selecionar região” e arraste sobre o texto na página.</p>
+                <p id="ocr-area-status" class="ocr-area-status" role="status" aria-live="polite">Adicione um PDF válido para extrair texto de uma região.</p>
+                <label class="input-group">Texto reconhecido<textarea id="ocr-area-text" rows="4" readonly placeholder="O texto da região selecionada aparecerá aqui..." aria-label="Texto reconhecido da região"></textarea></label>
+                <div class="ocr-area-actions"><button id="btn-ocr-area-copy" class="btn-secondary btn-icon-label" type="button" data-icon="copy" disabled>Copiar texto</button><button id="btn-ocr-area-save-txt" class="btn-secondary btn-icon-label" type="button" data-icon="file-text" disabled title="Salvar texto extraído como arquivo .txt">Salvar .txt</button></div>
+                <p class="input-help">O resultado pode conter erros. Confira nomes, valores e dados sensíveis antes de reutilizá-lo.</p>
+              </div>
+              <div class="ocr-area-preview-column">
+                <div id="ocr-area-preview-scroll" class="ocr-area-preview-scroll">
+                  <div id="ocr-area-viewport" class="ocr-area-viewport">
+                    <canvas id="ocr-area-canvas" aria-label="Prévia da página do PDF"></canvas>
+                    <div id="ocr-area-search-highlights" class="ocr-area-search-highlights" aria-hidden="true"></div>
+                    <div id="ocr-area-selection" class="ocr-area-selection hidden" aria-hidden="true"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <details class="ocr-advanced-options">
+            <summary>Mais opções</summary>
+            <div class="ocr-advanced-options-body">
+              <div class="form-grid form-grid-2">
+                <label>Idioma do documento<select id="ocr-language"><option value="por+eng">Português e inglês</option><option value="por">Português</option><option value="eng">Inglês</option></select></label>
+                <label>Como analisar<select id="ocr-mode"><option value="auto">Automático (recomendado)</option><option value="complete">Analisar todas as páginas</option><option value="redo">Refazer OCR do Central PDF</option></select></label>
+              </div>
+              <div class="settings-inline">
+                <label class="toggle"><input type="checkbox" id="ocr-auto-rotate" checked><span>Corrigir páginas tortas automaticamente</span></label>
+              </div>
+              <div class="settings-inline">
+                <label class="toggle"><input type="checkbox" id="ocr-image-enhancement" checked><span>Melhorar imagens de leitura fraca automaticamente</span></label>
+              </div>
+              <p class="input-help">Giro/inclinação e melhoria de contraste/ruído são opções separadas. As melhorias de imagem só são tentadas quando a leitura inicial é fraca e o melhor resultado é mantido.</p>
+              <label class="input-group">Páginas específicas (opcional)<input type="text" id="ocr-page-range" placeholder="Ex.: 1-3, 5" aria-describedby="ocr-page-range-help"></label>
+              <p id="ocr-page-range-help" class="input-help">Deixe em branco para processar todas as páginas.</p>
+              <p class="input-help">O reconhecimento pode cometer erros, especialmente em imagens borradas ou manuscritas. Confira informações importantes no arquivo gerado.</p>
+            </div>
+          </details>
+          <div class="action-bar-settings action-bar-settings--output-layout module-output-dock border-top ocr-footer-actions">
+            <div class="input-group">
+              <label for="ocr-output-name" class="input-label-with-icon">
+                <span class="input-label-icon" data-icon="file-text"></span>
+                <span>Nome personalizado (opcional)</span>
+                <span class="help-tip" tabindex="0" title="Em branco, cada arquivo recebe o nome do original com _pesquisavel. Se informar um nome, ele será usado como base e receberá números no lote." aria-label="Ajuda sobre nome personalizado dos arquivos finais"></span>
+              </label>
+              <input type="text" id="ocr-output-name" value="" placeholder="Automático: nome do original + _pesquisavel">
+            </div>
+            <div class="settings-inline">
+              <label class="toggle">
+                <input type="checkbox" id="ocr-zip">
+                <span>Compactar (.zip)</span>
+              </label>
+            </div>
+            <div class="module-action-group module-action-group--primary">
+              <button id="btn-run-ocr-txt" class="btn-secondary btn-icon-label" type="button" data-icon="file-text" title="Reconhecer texto e salvar direto como arquivo .txt">Exportar para .txt</button>
+              <button id="btn-run-ocr" class="btn-primary btn-icon-label" type="button" data-icon="scan-text" title="Criar uma cópia do PDF com texto pesquisável">Criar PDF pesquisável</button>
             </div>
           </div>
         </div>
@@ -343,6 +479,11 @@
             </div>
           </div>
 
+          <label class="toggle pdf-to-word-ocr-toggle">
+            <input type="checkbox" id="pdf-to-word-use-ocr">
+            <span>Reconhecer páginas digitalizadas antes de converter</span>
+          </label>
+
           <div id="pdf-to-word-status" class="inline-optimized-hint pdf-to-word-status hidden" aria-live="polite"></div>
 
           <div class="split-modes two-columns">
@@ -362,7 +503,7 @@
             </label>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top">
             <div class="input-group">
               <label for="pdf-to-word-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -429,6 +570,13 @@
                 <p>Divide em partes por limite aproximado.</p>
               </div>
             </label>
+            <label class="mode-option">
+              <input type="radio" name="split-mode" value="content">
+              <div class="mode-card">
+                <h3>Por conteúdo</h3>
+                <p>Localize uma expressão e revise as páginas que iniciarão cada parte.</p>
+              </div>
+            </label>
           </div>
 
           <div id="split-range-input-group" class="input-group hidden">
@@ -443,7 +591,25 @@
             <span class="input-help">O app gera partes o mais próximo possível do limite.</span>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top">
+          <section id="split-content-input-group" class="split-content-panel hidden" aria-labelledby="split-content-title">
+            <div class="section-heading compact">
+              <h3 id="split-content-title" class="section-title-with-icon"><span class="section-title-icon" data-icon="scan-search"></span><span>Localizar pontos de separação</span></h3>
+              <p>Pesquise uma palavra/frase ou peça sugestões por títulos recorrentes. Confira os pontos encontrados; a divisão só acontece quando você iniciar a operação.</p>
+            </div>
+            <div class="split-content-search" data-action-toolbar="auto" role="search" aria-label="Pesquisar conteúdo para separar">
+              <label class="input-group" for="split-content-query">Palavra ou frase que marca uma nova seção<input id="split-content-query" type="search" maxlength="120" placeholder="Ex: Relatório mensal" autocomplete="off"></label>
+                <button id="btn-split-content-analyze" class="btn-secondary btn-sm btn-icon-label" type="button" data-icon="search" data-toolbar-priority="70">Analisar documento</button>
+                <button id="btn-split-content-suggest" class="btn-secondary btn-sm btn-icon-label" type="button" data-icon="scan-search" title="Procura títulos recorrentes no topo das páginas; as sugestões precisam ser revisadas">Sugerir por títulos</button>
+                <button id="btn-split-content-cancel" class="btn-danger btn-sm btn-icon-label hidden" type="button" data-icon="x" data-toolbar-priority="15">Cancelar análise</button>
+            </div>
+            <p id="split-content-status" class="input-help" role="status" aria-live="polite">Os pontos encontrados serão mostrados para revisão antes da divisão.</p>
+            <fieldset id="split-content-results" class="split-content-results hidden">
+              <legend>Páginas que iniciarão uma nova parte</legend>
+              <div id="split-content-result-list" class="split-content-result-list"></div>
+            </fieldset>
+          </section>
+
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top">
             <div class="input-group">
               <label for="split-output-prefix" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -483,54 +649,82 @@
 
         <div id="organize-workspace" class="card hidden">
           <div class="organize-toolbar">
-            <div class="file-info-bar" style="display: flex; align-items: center; gap: 8px;">
+            <div class="file-info-bar">
               <span id="organize-file-name">arquivo.pdf</span>
               <span id="organize-file-meta">(0 páginas)</span>
-              <button id="btn-organize-show-details" class="btn-secondary btn-icon" data-icon="info" title="Informações do documento" style="min-height: 26px; height: 26px; width: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%;"></button>
-              <span id="organize-selection-meta" class="toolbar-chip">0 selecionadas</span>
+              <button id="btn-organize-show-details" class="btn-secondary btn-icon btn-icon-round-sm" data-icon="info" title="Informações do documento"></button>
+              <span id="organize-selection-meta" class="toolbar-chip" aria-live="polite">0 selecionadas</span>
             </div>
-            <div class="toolbar-actions organize-toolbar-actions">
-              <div class="toolbar-action-cluster toolbar-action-cluster--move">
-                <span class="toolbar-cluster-label">Mover</span>
+            <div class="organize-command-bar" role="group" aria-label="Ações e busca das páginas" data-toolbar-mode="compact">
+            <div id="organize-toolbar-actions" class="toolbar-actions organize-toolbar-actions" data-selection="none" role="toolbar" aria-label="Ações das páginas">
+              <div class="toolbar-action-cluster toolbar-action-cluster--move" role="group" aria-label="Mover páginas">
+                <span class="toolbar-cluster-label" aria-hidden="true">Mover</span>
                 <div class="module-action-group">
-                  <button id="btn-organize-move-first" class="btn-secondary btn-icon-label" data-icon="chevronUp">Primeira</button>
-                  <button id="btn-organize-move-up" class="btn-secondary btn-icon-label" data-icon="chevronUp">Mover acima</button>
-                  <button id="btn-organize-move-down" class="btn-secondary btn-icon-label" data-icon="chevronDown">Mover abaixo</button>
-                  <button id="btn-organize-move-last" class="btn-secondary btn-icon-label" data-icon="chevronDown">Última</button>
+                  <button id="btn-organize-move-first" class="btn-secondary btn-icon-label" data-icon="chevrons-up" data-toolbar-tier="3" data-toolbar-priority="18" title="Primeira página" aria-label="Primeira página">Primeira</button>
+                  <button id="btn-organize-move-up" class="btn-secondary btn-icon-label" data-icon="chevron-up" data-toolbar-tier="3" data-toolbar-priority="45" title="Mover acima" aria-label="Mover acima">Mover acima</button>
+                  <button id="btn-organize-move-down" class="btn-secondary btn-icon-label" data-icon="chevron-down" data-toolbar-tier="3" data-toolbar-priority="45" title="Mover abaixo" aria-label="Mover abaixo">Mover abaixo</button>
+                  <button id="btn-organize-move-last" class="btn-secondary btn-icon-label" data-icon="chevrons-down" data-toolbar-tier="3" data-toolbar-priority="18" title="Última página" aria-label="Última página">Última</button>
                 </div>
               </div>
-              <div class="toolbar-action-cluster toolbar-action-cluster--edit">
-                <span class="toolbar-cluster-label">Editar</span>
+              <div class="toolbar-action-cluster toolbar-action-cluster--edit" role="group" aria-label="Editar páginas">
+                <span class="toolbar-cluster-label" aria-hidden="true">Editar</span>
                 <div class="module-action-group">
-                  <button id="btn-organize-rotate-selected" class="btn-secondary btn-icon-label" data-icon="rotate-cw">Rotacionar</button>
-                  <button id="btn-organize-duplicate-selected" class="btn-secondary btn-icon-label" data-icon="copy">Duplicar</button>
-                  <button id="btn-organize-delete-selected" class="btn-secondary btn-icon-label btn-critical" data-icon="trash">Excluir</button>
-                  <button id="btn-organize-extract-selected" class="btn-secondary btn-icon-label" data-icon="file-check" style="border-color: var(--accent-color); color: var(--accent-color);" title="Salvar páginas selecionadas como um novo arquivo PDF">Extrair Páginas</button>
-                  <button id="btn-organize-export-images" class="btn-secondary btn-icon-label" data-icon="file-image" title="Exportar páginas selecionadas como imagens JPG/PNG">Exportar Imagem</button>
+                  <button id="btn-organize-rotate-selected" class="btn-secondary btn-icon-label" data-icon="rotate-cw" data-toolbar-tier="1" data-toolbar-priority="90" title="Rotacionar página" aria-label="Rotacionar página">Rotacionar</button>
+                  <button id="btn-organize-duplicate-selected" class="btn-secondary btn-icon-label" data-icon="copy" data-toolbar-tier="1" data-toolbar-priority="60" title="Duplicar página" aria-label="Duplicar página">Duplicar</button>
+                  <button id="btn-organize-delete-selected" class="btn-secondary btn-icon-label btn-critical" data-icon="trash" data-toolbar-tier="1" data-toolbar-priority="75" title="Excluir página(s)" aria-label="Excluir página(s)">Excluir</button>
+                  <span class="action-toolbar-separator" data-toolbar-separator aria-hidden="true"></span>
+                  <button id="btn-organize-extract-selected" class="btn-secondary btn-icon-label btn-accent-outline" data-icon="file-check" data-toolbar-tier="2" data-toolbar-priority="40" title="Salvar páginas selecionadas como um novo arquivo PDF" aria-label="Extrair Páginas">Extrair Páginas</button>
+                  <button id="btn-organize-export-images" class="btn-secondary btn-icon-label" data-icon="file-image" data-toolbar-tier="3" data-toolbar-priority="25" title="Exportar páginas selecionadas como imagens JPG/PNG" aria-label="Exportar Imagem">Exportar Imagem</button>
                 </div>
               </div>
-              <div class="toolbar-action-cluster toolbar-action-cluster--file">
-                <span class="toolbar-cluster-label">Arquivo</span>
+              <div class="toolbar-action-cluster toolbar-action-cluster--file" role="group" aria-label="Arquivo e histórico">
+                <span class="toolbar-cluster-label" aria-hidden="true">Arquivo</span>
                 <div class="module-action-group module-action-group--system">
-                  <button id="btn-organize-undo-action" class="btn-secondary btn-icon-label btn-undo-action" data-icon="undo" title="Desfaz a última alteração feita na organização">Desfazer</button>
-                  <button id="btn-organize-reverse" class="btn-secondary btn-icon-label" data-icon="flip-vertical">Inverter ordem</button>
-                  <button type="button" id="btn-organize-add-file" class="btn-secondary btn-icon-label" data-icon="cloud-upload">Adicionar PDF</button>
-                  <button type="button" id="btn-organize-add-image" class="btn-secondary btn-icon-label" data-icon="file-image">+ Imagens</button>
-                  <button id="btn-organize-clear-file" class="btn-secondary btn-icon-label btn-critical" data-icon="x">Limpar</button>
+                  <button id="btn-organize-undo-action" class="btn-secondary btn-icon-label btn-undo-action" data-icon="undo" data-toolbar-tier="3" data-toolbar-priority="80" title="Desfaz a última alteração feita na organização" aria-label="Desfazer">Desfazer</button>
+                  <button id="btn-organize-redo-action" class="btn-secondary btn-icon-label btn-undo-action organize-redo-icon" data-icon="undo" data-toolbar-tier="3" data-toolbar-priority="80" title="Refaz a última alteração desfeita" aria-label="Refazer">Refazer</button>
+                  <span class="action-toolbar-separator" data-toolbar-separator aria-hidden="true"></span>
+                  <button id="btn-organize-reverse" class="btn-secondary btn-icon-label" data-icon="flip-vertical" data-toolbar-tier="2" data-toolbar-priority="35" title="Inverter ordem das páginas" aria-label="Inverter ordem">Inverter ordem</button>
+                  <span class="action-toolbar-separator" data-toolbar-separator aria-hidden="true"></span>
+                  <button type="button" id="btn-organize-add-file" class="btn-secondary btn-icon-label" data-icon="cloud-upload" data-toolbar-tier="1" data-toolbar-priority="70" title="Adicionar arquivo PDF" aria-label="Adicionar PDF">Adicionar PDF</button>
+                  <button type="button" id="btn-organize-add-image" class="btn-secondary btn-icon-label" data-icon="file-image" data-toolbar-tier="2" data-toolbar-priority="65" title="Adicionar imagens" aria-label="Adicionar imagens">+ Imagens</button>
+                  <button id="btn-organize-clear-file" class="btn-secondary btn-icon-label btn-critical" data-icon="x" data-toolbar-tier="3" data-toolbar-priority="10" title="Limpar páginas" aria-label="Limpar páginas">Limpar</button>
                 </div>
               </div>
+            </div>
+            <div class="organize-command-search" role="search" aria-label="Busca e tamanho das miniaturas">
+              <label class="organize-search-input-label" for="organize-document-search-input"><span class="sr-only">Localizar texto no documento</span><input id="organize-document-search-input" type="search" maxlength="120" placeholder="Buscar no documento…" autocomplete="off"></label>
+              <button id="btn-organize-document-search" class="btn-secondary btn-icon-label" type="button" data-icon="search" data-toolbar-tier="2" data-toolbar-priority="65" title="Localizar texto" aria-label="Localizar texto">Localizar</button>
+              <button id="btn-organize-document-search-cancel" class="btn-danger btn-icon-label hidden" type="button" data-icon="x" data-toolbar-tier="2" data-toolbar-priority="15" title="Cancelar busca" aria-label="Cancelar busca">Cancelar</button>
+              <div class="organize-view-switch" role="group" aria-label="Tamanho das miniaturas">
+                <button class="btn-secondary btn-icon-label organize-view-button" type="button" data-icon="grid-3x3" data-toolbar-tier="3" data-toolbar-priority="90" data-organize-view="small" aria-pressed="false" title="Miniaturas pequenas" aria-label="Miniaturas pequenas">Pequenas</button>
+                <button class="btn-secondary btn-icon-label organize-view-button" type="button" data-icon="grid-2x2" data-toolbar-tier="3" data-toolbar-priority="90" data-organize-view="medium" aria-pressed="true" title="Miniaturas médias" aria-label="Miniaturas médias">Médias</button>
+                <button class="btn-secondary btn-icon-label organize-view-button" type="button" data-icon="square" data-toolbar-tier="3" data-toolbar-priority="90" data-organize-view="large" aria-pressed="false" title="Miniaturas grandes" aria-label="Miniaturas grandes">Grandes</button>
+              </div>
+            </div>
             </div>
           </div>
 
           <div class="organize-workspace-layout organize-workspace-layout--bookmarks-collapsed">
             <div class="organize-grid-column">
               <div class="organize-help-card">
-                <span class="hint-line">Organize suas páginas: arraste miniaturas para mover, rotacione, duplique, exclua ou inclua novos PDFs/imagens. Use Ctrl+clique para selecionar avulsas e Shift+clique para intervalos. <span class="help-tip" tabindex="0" title="Ctrl seleciona páginas individuais. Shift seleciona um intervalo entre a Última página clicada e a atual." aria-label="Ajuda sobre seleção de páginas"></span></span>
+                <div class="organize-help-row">
+                  <span class="hint-line">Organize suas páginas: arraste miniaturas para mover, rotacione, duplique, exclua ou inclua novos PDFs/imagens. Use as caixas de seleção, Ctrl+clique para páginas avulsas ou Shift+clique para intervalos. <span class="help-tip" tabindex="0" title="As caixas marcam páginas individualmente. Ctrl seleciona páginas individuais e Shift seleciona um intervalo entre a última página clicada e a atual." aria-label="Ajuda sobre seleção de páginas"></span></span>
+                  <div class="organize-selection-actions" role="group" aria-label="Seleção de páginas">
+                    <button id="btn-organize-select-all" type="button" class="btn-secondary btn-icon-label organize-selection-button" data-icon="success" title="Selecionar todas as páginas">Selecionar tudo</button>
+                    <button id="btn-organize-clear-selection" type="button" class="btn-secondary btn-icon-label organize-selection-button" data-icon="x" title="Remover a seleção das páginas">Limpar seleção</button>
+                  </div>
+                </div>
+              </div>
+              <div class="organize-document-search" aria-label="Resultados da busca de texto">
+                <p id="organize-document-search-status" class="input-help sr-only" role="status" aria-live="polite">Pesquisa local em texto nativo e páginas digitalizadas.</p>
+                <ol id="organize-document-search-results" class="organize-document-search-results" aria-label="Páginas encontradas"></ol>
               </div>
               <div class="pages-grid-container">
-                <div id="pages-grid" class="pages-grid"></div>
+                <div id="pages-grid" class="pages-grid pages-grid--medium" role="listbox" aria-label="Páginas do documento" aria-multiselectable="true"></div>
               </div>
             </div>
+
+            <div id="organize-context-menu" class="context-menu hidden" role="menu" aria-label="Ações da página"></div>
 
             <div id="organize-bookmarks-panel" class="card organize-bookmarks-panel organize-bookmarks-panel--collapsed">
               <button
@@ -574,7 +768,7 @@
             </div>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top">
             <div class="input-group">
               <label for="organize-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -618,7 +812,10 @@
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="list"></span><span>Arquivos em Lote</span></h2>
               <p>Os originais não são alterados. O app gera cópias com sufixo próprio.</p>
             </div>
-            <button type="button" id="btn-watermark-add-more" class="btn-secondary btn-sm btn-icon-label" data-icon="cloud-upload">Adicionar arquivos</button>
+            <div class="module-action-group file-selection-actions">
+              <button id="btn-watermark-clear" class="btn-secondary btn-sm btn-icon-label btn-critical" type="button" data-icon="x" title="Remove todos os arquivos selecionados">Limpar</button>
+              <button type="button" id="btn-watermark-add-more" class="btn-secondary btn-sm btn-icon-label" data-icon="cloud-upload">Adicionar arquivos</button>
+            </div>
           </div>
 
           <div class="file-list-scroll compact">
@@ -707,7 +904,7 @@
                   <input type="number" id="watermark-opacity" min="5" max="80" step="5" value="18">
                 </div>
                 <div class="input-group">
-                  <label for="watermark-rotation">Rotação (graus)</label>
+                  <label for="watermark-rotation">Rotação da marca (graus)</label>
                   <input type="number" id="watermark-rotation" min="-180" max="180" step="5" value="35">
                 </div>
                 <div class="input-group">
@@ -716,7 +913,7 @@
                 </div>
               </div>
 
-              <div class="action-bar-settings action-bar-settings--output-layout action-bar-settings--watermark-output border-top">
+              <div class="action-bar-settings action-bar-settings--output-layout action-bar-settings--watermark-output module-output-dock border-top">
                 <div class="input-group">
                     <label for="watermark-output-suffix">Sufixo do arquivo <span class="help-tip" tabindex="0" title="Texto adicionado ao final do nome do arquivo gerado para diferenciar do original." aria-label="Ajuda sobre sufixo do arquivo"></span></label>
                     <input type="text" id="watermark-output-suffix" value="_marca_dagua" placeholder="Ex: _interno">
@@ -743,10 +940,18 @@
                   <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="search"></span><span>Preview da Marca d'água</span> <span class="help-tip" tabindex="0" title="Pré-visualização aproximada. O resultado final pode variar um pouco conforme o tamanho e as margens do PDF real." aria-label="Ajuda sobre preview da marca d'água"></span></h2>
                   <p>Visualização aproximada antes de iniciar o processamento.</p>
                 </div>
-                <div class="watermark-page-nav" aria-label="Navegação do preview">
-                  <button id="btn-watermark-prev-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronLeft" title="Página ou imagem anterior no lote">Anterior</button>
-                  <span id="watermark-page-label" class="toolbar-chip">Item 0 de 0</span>
-                  <button id="btn-watermark-next-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronRight" title="Próxima página ou imagem no lote">Próximo</button>
+                <div class="watermark-preview-toolbar">
+                  <div class="watermark-page-nav" aria-label="Navegação do preview">
+                    <button id="btn-watermark-prev-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronLeft" title="Página ou imagem anterior no lote">Anterior</button>
+                    <span id="watermark-page-label" class="toolbar-chip">Arquivo 0 de 0 • Página 0 de 0</span>
+                    <button id="btn-watermark-next-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronRight" title="Próxima página ou imagem no lote">Próximo</button>
+                  </div>
+                  <div class="watermark-source-rotation" role="group" aria-label="Orientação do documento">
+                    <button id="btn-watermark-rotate-left" class="btn-secondary btn-sm btn-icon-label rotate-left-icon" data-icon="rotate-cw" title="Girar o documento 90 graus para a esquerda">Girar à esquerda</button>
+                    <span id="watermark-source-rotation-label" class="toolbar-chip" aria-live="polite">Documento: 0°</span>
+                    <button id="btn-watermark-rotate-right" class="btn-secondary btn-sm btn-icon-label" data-icon="rotate-cw" title="Girar o documento 90 graus para a direita">Girar à direita</button>
+                    <button id="btn-watermark-reset-rotation" class="btn-secondary btn-sm btn-icon-label" data-icon="undo" title="Restaurar a orientação original do documento">Restaurar</button>
+                  </div>
                 </div>
                 <div class="watermark-preview-shell">
                   <canvas id="watermark-preview-canvas" width="720" height="960"></canvas>
@@ -781,7 +986,7 @@
             <button id="btn-compress-change-file" class="btn-secondary btn-sm btn-icon-label" data-icon="folder-open">Alterar arquivo</button>
           </div>
 
-          <div id="compress-mode-selector" class="split-modes two-columns" style="margin-top: 14px; margin-bottom: 14px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+          <div id="compress-mode-selector" class="split-modes two-columns">
             <label class="mode-option">
               <input type="radio" name="compress-mode" value="normal" checked>
               <div class="mode-card">
@@ -798,7 +1003,7 @@
             </label>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top">
             <div class="input-group">
               <label for="compress-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -858,11 +1063,11 @@
                 <div class="protect-password-row">
                   <div class="password-input-shell">
                     <input type="password" id="protect-password" placeholder="Ex: SenhaForte123" class="protect-password-input">
-                    <button type="button" id="btn-protect-toggle-password" class="password-visibility-toggle" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.349a1 1 0 0 1 0-.698C3.75 7.632 7.523 5 12 5s8.25 2.632 9.938 6.651a1 1 0 0 1 0 .698C20.25 16.368 16.477 19 12 19s-8.25-2.632-9.938-6.651"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    <button type="button" id="btn-protect-toggle-password" class="password-visibility-toggle" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false" data-icon="eye"></button>
                   </div>
                   <button type="button" id="btn-protect-generate-password" class="btn-secondary protect-password-action">Gerar aleatória</button>
                   <button type="button" id="btn-protect-copy-password" class="btn-secondary protect-password-copy" title="Copiar senha">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span data-icon="copy" aria-hidden="true"></span>
                   </button>
                 </div>
               </div>
@@ -892,48 +1097,48 @@
               </div>
             </div>
 
-            <div class="section-heading border-top" style="margin-top: 16px; padding-top: 16px;">
+            <div class="section-heading border-top section-heading--protect-spacing">
               <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="shield"></span><span>Permissões Restritas</span></h3>
               <p>Desmarque as opções abaixo para bloquear ações específicas no PDF.</p>
             </div>
 
-            <div class="settings-checkboxes-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <div class="settings-checkboxes-grid">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-print" checked>
                 <span>Permitir Impressão</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-copy" checked>
                 <span>Permitir Cópia de Conteúdo</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-modify" checked>
                 <span>Permitir Modificação do Documento</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-extract" checked>
                 <span>Permitir Extração de Páginas/Imagens</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-annotate" checked>
                 <span>Permitir Anotações e Comentários</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-fill" checked>
                 <span>Permitir Preenchimento de Formulários</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-assembly" checked>
                 <span>Permitir Montagem/Organização de Páginas</span>
               </label>
-              <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <label class="checkbox-container">
                 <input type="checkbox" id="protect-perm-print-high" checked>
                 <span>Permitir Impressão em Alta Qualidade</span>
               </label>
             </div>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top" style="margin-top: 20px; padding-top: 14px;">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top action-bar-settings--security-spacing">
             <div class="input-group">
               <label for="protect-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -993,15 +1198,18 @@
                 <div class="unlock-password-row">
                   <div class="password-input-shell">
                     <input type="password" id="unlock-password" placeholder="Digite a senha conhecida" class="unlock-password-input">
-                    <button type="button" id="btn-unlock-toggle-password" class="password-visibility-toggle" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.349a1 1 0 0 1 0-.698C3.75 7.632 7.523 5 12 5s8.25 2.632 9.938 6.651a1 1 0 0 1 0 .698C20.25 16.368 16.477 19 12 19s-8.25-2.632-9.938-6.651"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    <button type="button" id="btn-unlock-toggle-password" class="password-visibility-toggle" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false" data-icon="eye"></button>
                   </div>
-                  <button type="button" id="btn-unlock-clear-password" class="btn-secondary unlock-password-action">Limpar</button>
+                  <button type="button" id="btn-unlock-clear-password" class="btn-secondary btn-critical btn-icon-label unlock-password-action" data-icon="x">Limpar</button>
                   <button type="button" id="btn-unlock-copy-password" class="btn-secondary unlock-password-copy" title="Copiar senha">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span data-icon="copy" aria-hidden="true"></span>
                   </button>
                 </div>
               </div>
 
+            </div>
+
+            <div class="action-bar-settings action-bar-settings--output-layout module-output-dock border-top action-bar-settings--security-spacing">
               <div class="input-group">
                 <label for="unlock-output-name" class="input-label-with-icon">
                   <span class="input-label-icon" data-icon="file-text"></span>
@@ -1010,9 +1218,6 @@
                 </label>
                 <input type="text" id="unlock-output-name" value="desbloqueado.pdf">
               </div>
-            </div>
-
-            <div class="action-bar-settings border-top" style="margin-top: 20px; padding-top: 14px;">
               <div class="module-action-group module-action-group--primary">
                 <button id="btn-run-unlock" class="btn-primary btn-icon-label" data-icon="unlock" title="Remove a proteção do PDF e salva uma nova cópia">Desbloquear PDF</button>
               </div>
@@ -1043,6 +1248,7 @@
               <span id="redact-file-meta" class="file-meta">Calculando...</span>
             </div>
             <div class="inline-actions">
+              <button id="btn-redact-fix-orientation" class="btn-secondary btn-sm btn-icon-label" data-icon="rotate-cw" title="Abrir este documento em Organizar Páginas para corrigir sua orientação">Corrigir orientação</button>
               <button id="btn-redact-change-file" class="btn-secondary btn-sm btn-icon-label" data-icon="folder-open">Trocar arquivo</button>
               <button id="btn-redact-clear-file" class="btn-secondary btn-sm btn-icon-label btn-critical" data-icon="x">Cancelar</button>
             </div>
@@ -1055,11 +1261,11 @@
                 <p>Adicione tarjas pretas sobre dados confidenciais na visualização ao lado.</p>
               </div>
 
-              <div class="redact-toolbar" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                <button id="btn-add-redact-box" class="btn-secondary btn-icon-label" data-icon="eye-off">Adicionar Tarja</button>
-                <div class="input-group" style="flex: 0 0 auto; min-width: 130px; gap: 4px;">
-                  <label for="redact-box-color" style="font-size: 0.76rem; font-weight: 600; color: var(--text-secondary);">Cor da Tarja</label>
-                  <select id="redact-box-color" style="min-height: 32px; font-size: 0.8rem; padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
+              <div class="redact-toolbar">
+                <button id="btn-add-redact-box" class="btn-primary btn-icon-label redact-add-box-button" data-icon="eye-off">Adicionar Tarja</button>
+                <div class="input-group redact-box-color-group">
+                  <label for="redact-box-color" class="redact-box-color-label">Cor da Tarja</label>
+                  <select id="redact-box-color" class="redact-box-color-select">
                     <option value="#000000" selected>Preto</option>
                     <option value="#7f7f7f">Cinza</option>
                     <option value="#ffffff">Branco</option>
@@ -1067,28 +1273,29 @@
                 </div>
               </div>
 
-              <div class="card redact-search-card" style="margin-top: 12px; margin-bottom: 12px; padding: 14px;">
-                <div class="section-heading compact" style="margin-bottom: 10px;">
-                  <h3 class="section-title-with-icon" style="font-size: 0.92rem;"><span class="section-title-icon" data-icon="search"></span><span>Busca Inteligente (Tarja Automática)</span></h3>
-                  <p style="font-size: 0.76rem;">Busque por termos ou use presets para aplicar tarjas em todo o documento.</p>
+              <div class="card redact-search-card">
+                <div class="section-heading compact redact-search-heading">
+                  <h3 class="section-title-with-icon redact-search-title"><span class="section-title-icon" data-icon="search"></span><span>Busca Inteligente (Tarja Automática)</span></h3>
+                  <p class="redact-search-description">Busque no texto do PDF e use OCR local em páginas digitalizadas. Revise cada sugestão na prévia antes de salvar.</p>
                 </div>
-                <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                  <input type="text" id="redact-search-input" placeholder="Ex: CPF, CNPJ, telefone, palavra..." style="flex: 1; min-height: 34px; padding: 6px 10px; font-size: 0.84rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
-                  <button id="btn-redact-search" class="btn-primary btn-sm" type="button" style="min-height: 34px; border-radius: 6px; padding: 0 12px;">Buscar</button>
+                <div class="redact-search-row" data-action-toolbar="auto" role="search" aria-label="Buscar texto para ocultar">
+                  <input type="text" id="redact-search-input" placeholder="Ex: CPF, CNPJ, telefone, palavra..." class="redact-search-input">
+                  <button id="btn-redact-search" class="btn-secondary btn-sm btn-icon-label redact-search-button" type="button" data-icon="search" data-toolbar-priority="70">Buscar</button>
                 </div>
-                <div class="preset-strip" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
-                  <button type="button" class="preset-btn" data-redact-preset="CPF" style="font-size: 0.76rem; padding: 4px 10px; border-radius: 4px;">CPF</button>
-                  <button type="button" class="preset-btn" data-redact-preset="CNPJ" style="font-size: 0.76rem; padding: 4px 10px; border-radius: 4px;">CNPJ</button>
-                  <button type="button" class="preset-btn" data-redact-preset="TELEFONE" style="font-size: 0.76rem; padding: 4px 10px; border-radius: 4px;">Telefone</button>
-                  <button type="button" class="preset-btn" data-redact-preset="EMAIL" style="font-size: 0.76rem; padding: 4px 10px; border-radius: 4px;">E-mail</button>
+                <div class="preset-strip redact-search-presets">
+                  <button type="button" class="preset-btn redact-preset-btn" data-redact-preset="CPF">CPF</button>
+                  <button type="button" class="preset-btn redact-preset-btn" data-redact-preset="CNPJ">CNPJ</button>
+                  <button type="button" class="preset-btn redact-preset-btn" data-redact-preset="TELEFONE">Telefone</button>
+                  <button type="button" class="preset-btn redact-preset-btn" data-redact-preset="EMAIL">E-mail</button>
+                  <button type="button" class="preset-btn redact-preset-btn" data-redact-preset="DATA">Data</button>
                 </div>
-                <span id="redact-search-status" class="input-help" style="display: block; font-size: 0.74rem; color: var(--text-secondary);"></span>
+                <span id="redact-search-status" class="input-help redact-search-status"></span>
               </div>
 
               <div class="card redact-field-editor-card">
                 <div class="section-heading compact">
-                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="settings"></span><span>Tarjas na página atual</span></h3>
-                  <p>Mova e redimensione a tarja diretamente no preview ou remova abaixo.</p>
+                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="settings"></span><span>Tarjas em todas as páginas</span></h3>
+                  <p>Veja onde estão as tarjas. Selecione uma para ir à página, ajustar ou remover.</p>
                 </div>
                 <div id="redact-field-editor" class="redact-field-editor">
                   <div class="empty-state">Nenhuma tarja preta adicionada nesta página.</div>
@@ -1104,21 +1311,33 @@
                   <p>Navegue nas páginas para desenhar as tarjas.</p>
                 </div>
 
-                <div class="redact-page-nav" aria-label="Navegação do preview">
-                  <button id="btn-redact-prev-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronLeft" aria-label="Ir para a página anterior">Página anterior</button>
-                  <span id="redact-page-label" class="toolbar-chip">Página 0 de 0</span>
-                  <button id="btn-redact-next-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronRight" aria-label="Ir para a próxima página">Próxima página</button>
+                <div class="redact-preview-controls" aria-label="Controles do preview">
+                  <div class="redact-zoom-toolbar" aria-label="Controles de zoom do preview">
+                    <span class="redact-zoom-label">Zoom</span>
+                    <button id="btn-redact-zoom-out" class="btn-secondary btn-sm btn-icon" data-icon="minus" type="button" aria-label="Diminuir zoom" title="Diminuir zoom"></button>
+                    <input id="redact-zoom-range" class="redact-zoom-range" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom do preview" aria-valuemin="50" aria-valuemax="250" aria-valuenow="100">
+                    <button id="btn-redact-zoom-in" class="btn-secondary btn-sm btn-icon" data-icon="plus" type="button" aria-label="Aumentar zoom" title="Aumentar zoom"></button>
+                    <span id="redact-zoom-value" class="toolbar-chip" aria-live="polite">100%</span>
+                    <button id="btn-redact-zoom-reset" class="btn-secondary btn-sm btn-icon-label" data-icon="rotate-ccw" type="button" aria-label="Voltar o zoom para 100%" title="Voltar ao tamanho original">100%</button>
+                  </div>
+
+                  <div class="redact-page-nav" aria-label="Navegação do preview">
+                    <button id="btn-redact-prev-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronLeft" aria-label="Ir para a página anterior">Página anterior</button>
+                    <span id="redact-page-label" class="toolbar-chip">Página 0 de 0</span>
+                    <button id="btn-redact-next-page" class="btn-secondary btn-sm btn-icon-label" data-icon="chevronRight" aria-label="Ir para a próxima página">Próxima página</button>
+                  </div>
                 </div>
 
                 <div id="redact-preview-shell" class="redact-preview-shell">
                   <canvas id="redact-preview-canvas" width="720" height="960"></canvas>
                   <div id="redact-overlay-layer" class="redact-overlay-layer"></div>
                 </div>
+
               </div>
             </div>
           </div>
 
-          <div class="action-bar-settings action-bar-settings--field-action border-top redact-footer-actions">
+          <div class="action-bar-settings action-bar-settings--field-action module-output-dock border-top redact-footer-actions">
             <div class="input-group">
               <label for="redact-output-name" class="input-label-with-icon">
                 <span class="input-label-icon" data-icon="file-text"></span>
@@ -1145,6 +1364,19 @@
           <p>Preferências locais, diagnóstico e operação portátil para ambientes restritivos.</p>
         </header>
 
+        <nav class="settings-tabs" aria-label="Seções das configurações" role="tablist">
+          <button class="settings-tab active" type="button" role="tab" aria-selected="true" aria-controls="settings-pane-general" data-settings-tab="general">
+            <span data-icon="settings"></span><span>Geral</span>
+          </button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settings-pane-support" data-settings-tab="support">
+            <span data-icon="shield"></span><span>Suporte</span>
+          </button>
+          <button class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settings-pane-about" data-settings-tab="about">
+            <span data-icon="info"></span><span>Sobre</span>
+          </button>
+        </nav>
+
+        <div id="settings-pane-general" class="settings-pane active" role="tabpanel">
         <div class="card">
           <div class="section-heading">
             <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="settings"></span><span>Geral</span></h2>
@@ -1160,6 +1392,19 @@
               <input type="text" id="setting-output-dir" class="setting-path-input" readonly placeholder="Salvar na pasta de origem" title="Salvar na pasta de origem">
               <button id="btn-select-output-dir" class="btn-secondary btn-icon" data-icon="folder-open" title="Escolher uma pasta de destino personalizada" aria-label="Escolher uma pasta de destino personalizada"></button>
               <button id="btn-clear-output-dir" class="btn-secondary btn-icon hidden btn-critical" data-icon="x" title="Voltar a salvar na pasta de origem" aria-label="Voltar a salvar na pasta de origem"></button>
+            </div>
+          </div>
+
+          <div class="setting-row border-top">
+            <div class="setting-info">
+              <h3>Abrir arquivos automaticamente</h3>
+              <p>Abre o primeiro arquivo gerado quando uma operação terminar.</p>
+            </div>
+            <div class="setting-action">
+              <label class="toggle" for="setting-open-output-automatically">
+                <input type="checkbox" id="setting-open-output-automatically">
+                <span>Abrir ao concluir</span>
+              </label>
             </div>
           </div>
 
@@ -1180,8 +1425,8 @@
               <div class="setting-appearance-group">
                 <label class="setting-inline-label" for="setting-color-theme">Cor</label>
                 <select id="setting-color-theme">
-                  <option value="random">Aleatório (Padrão)</option>
                   <option value="blue">Azul</option>
+                  <option value="random">Aleatório</option>
                   <option value="red">Vermelho</option>
                   <option value="olive">Verde Oliva</option>
                   <option value="violet">Violeta</option>
@@ -1201,6 +1446,9 @@
           </div>
         </div>
 
+        </div>
+
+        <div id="settings-pane-support" class="settings-pane" role="tabpanel" hidden>
         <div class="card">
           <div class="section-heading">
             <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="shield"></span><span>Suporte e Diagnóstico</span></h2>
@@ -1238,17 +1486,19 @@
           </div>
         </div>
 
-        <div id="settings-about-panel" class="card about-panel">
-          <button id="btn-settings-about-toggle" class="about-toggle" type="button" aria-expanded="false" title="Exibir detalhes do aplicativo">
+        </div>
+
+        <div id="settings-pane-about" class="settings-pane" role="tabpanel" hidden>
+        <div id="settings-about-panel" class="card about-panel expanded">
+          <div class="about-toggle">
             <span class="section-title-with-icon">
               <span class="section-title-icon" data-icon="info"></span>
               <span>Sobre</span>
             </span>
             <span class="about-toggle-meta">v- " Build -</span>
-            <span class="about-toggle-chevron" data-icon="chevronUp"></span>
-          </button>
+          </div>
 
-          <div id="settings-about-body" class="about-body hidden">
+          <div id="settings-about-body" class="about-body">
             <div id="about-system-slot"></div>
 
             <div class="about-block">
@@ -1259,7 +1509,7 @@
                 </span>
                 <span class="about-toggle-chevron" data-icon="chevronUp"></span>
               </button>
-              <div id="about-technologies-body" class="about-subbody hidden">
+              <div id="about-technologies-body" class="about-subbody about-collapsed">
                 <div id="about-technologies-list" class="about-tech-list"></div>
               </div>
             </div>
@@ -1276,47 +1526,72 @@
             </div>
           </div>
         </div>
+        </div>
       </section>
 
       <!-- Help Tab Content -->
       <section id="tab-help" class="tab-content">
         <header class="tab-header">
           <h1 class="title-with-icon"><span class="title-icon" data-icon="info"></span><span>Central de Ajuda</span></h1>
-          <p>Guias rápidos, limites operacionais e boas práticas para cada ferramenta.</p>
+          <p>Aprenda a usar o Central PDF, encontre soluções rápidas e entenda o destino dos seus arquivos.</p>
         </header>
 
         <div class="help-layout">
           <!-- Sidebar for help topics -->
-          <div class="help-sidebar card">
-            <button class="help-nav-btn active" data-help-target="general" data-icon="house">Geral e Segurança</button>
-            <button class="help-nav-btn" data-help-target="images-to-pdf" data-icon="file-output">Converter para PDF</button>
-            <button class="help-nav-btn" data-help-target="merge" data-icon="merge">Mesclar</button>
-            <button class="help-nav-btn" data-help-target="split" data-icon="scissors">Separar PDFs</button>
-            <button class="help-nav-btn" data-help-target="signature" data-icon="pen-line">Assinar PDF</button>
-            <button class="help-nav-btn" data-help-target="pdf-to-word" data-icon="file-text">PDF para Word</button>
-            <button class="help-nav-btn" data-help-target="organize" data-icon="layout-list">Organizar Páginas</button>
-            <button class="help-nav-btn" data-help-target="watermark" data-icon="stamp">Marca d'água</button>
-            <button class="help-nav-btn" data-help-target="compress" data-icon="zap">Reduzir tamanho</button>
-            <button class="help-nav-btn" data-help-target="protect" data-icon="lock">Proteger PDF</button>
-            <button class="help-nav-btn" data-help-target="unlock" data-icon="unlock">Desbloquear PDF</button>
-            <button class="help-nav-btn" data-help-target="redact" data-icon="eye-off">Ocultar Dados</button>
+          <div class="help-sidebar card" role="tablist" aria-label="Tópicos da Central de Ajuda" aria-orientation="vertical">
+            <div class="help-sidebar-heading"><span>Ferramentas e orientações</span><small>Selecione um assunto</small></div>
+            <button class="help-nav-btn active" id="help-tab-general" role="tab" aria-selected="true" aria-controls="help-pane-general" data-help-target="general" data-icon="house">Primeiros passos</button>
+            <button class="help-nav-btn" id="help-tab-images-to-pdf" role="tab" aria-selected="false" aria-controls="help-pane-images-to-pdf" data-help-target="images-to-pdf" data-icon="file-output">Converter para PDF</button>
+            <button class="help-nav-btn" id="help-tab-merge" role="tab" aria-selected="false" aria-controls="help-pane-merge" data-help-target="merge" data-icon="merge">Mesclar</button>
+            <button class="help-nav-btn" id="help-tab-split" role="tab" aria-selected="false" aria-controls="help-pane-split" data-help-target="split" data-icon="scissors">Separar PDFs</button>
+            <button class="help-nav-btn" id="help-tab-signature" role="tab" aria-selected="false" aria-controls="help-pane-signature" data-help-target="signature" data-icon="pen-line">Assinar PDF</button>
+            <button class="help-nav-btn" id="help-tab-pdf-to-word" role="tab" aria-selected="false" aria-controls="help-pane-pdf-to-word" data-help-target="pdf-to-word" data-icon="file-text">PDF para Word</button>
+            <button class="help-nav-btn" id="help-tab-ocr" role="tab" aria-selected="false" aria-controls="help-pane-ocr" data-help-target="ocr" data-icon="scan-text">Reconhecer texto</button>
+            <button class="help-nav-btn" id="help-tab-organize" role="tab" aria-selected="false" aria-controls="help-pane-organize" data-help-target="organize" data-icon="layout-list">Organizar Páginas</button>
+            <button class="help-nav-btn" id="help-tab-watermark" role="tab" aria-selected="false" aria-controls="help-pane-watermark" data-help-target="watermark" data-icon="stamp">Marca d'água</button>
+            <button class="help-nav-btn" id="help-tab-compress" role="tab" aria-selected="false" aria-controls="help-pane-compress" data-help-target="compress" data-icon="zap">Reduzir tamanho</button>
+            <button class="help-nav-btn" id="help-tab-protect" role="tab" aria-selected="false" aria-controls="help-pane-protect" data-help-target="protect" data-icon="lock">Proteger PDF</button>
+            <button class="help-nav-btn" id="help-tab-unlock" role="tab" aria-selected="false" aria-controls="help-pane-unlock" data-help-target="unlock" data-icon="unlock">Desbloquear PDF</button>
+            <button class="help-nav-btn" id="help-tab-redact" role="tab" aria-selected="false" aria-controls="help-pane-redact" data-help-target="redact" data-icon="eye-off">Ocultar Dados</button>
           </div>
 
           <!-- Main area containing target content -->
           <div class="help-content card">
+            <div class="help-context-strip">
+              <span class="help-context-icon" data-icon="lightbulb" aria-hidden="true"></span>
+              <div><strong>Precisa fazer algo agora?</strong><span>Use um atalho abaixo ou pesquise por uma dúvida.</span></div>
+            </div>
+            <div class="help-quick-actions" aria-label="Atalhos da Central de Ajuda">
+              <button class="help-quick-card" type="button" data-go-tab="images-to-pdf"><span data-icon="file-output"></span><span><strong>Começar com um arquivo</strong><small>Converter imagens, Word ou Excel</small></span></button>
+              <button class="help-quick-card" type="button" data-go-tab="settings"><span data-icon="folder-open"></span><span><strong>Definir pasta de saída</strong><small>Escolher onde os novos arquivos serão salvos</small></span></button>
+              <button class="help-quick-card" type="button" data-go-tab="dashboard"><span data-icon="clock"></span><span><strong>Ver últimas atividades</strong><small>Abrir arquivos processados recentemente</small></span></button>
+            </div>
             <!-- GENERAL -->
-            <div class="help-pane active" id="help-pane-general">
-              <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="shield"></span><span>Geral e Segurança Local</span></h2>
-              <p>O <strong>Central PDF</strong> foi projetado para operar offline com foco em segurança e conformidade em ambientes corporativos.</p>
+            <div class="help-pane active" id="help-pane-general" role="tabpanel" aria-labelledby="help-tab-general" aria-hidden="false">
+              <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="shield"></span><span>Primeiros passos e segurança</span></h2>
+              <p>Escolha uma ferramenta, adicione o arquivo e confira o nome e a pasta de destino antes de iniciar. O original permanece preservado.</p>
+              <div class="help-step-grid">
+                <div class="help-step"><span>1</span><div><strong>Escolha o módulo</strong><small>Use o menu lateral ou a busca para encontrar a tarefa.</small></div></div>
+                <div class="help-step"><span>2</span><div><strong>Adicione o arquivo</strong><small>Clique na área de upload ou arraste o documento para ela.</small></div></div>
+                <div class="help-step"><span>3</span><div><strong>Confira a saída</strong><small>Por padrão, a cópia vai para a pasta do original ou para a pasta definida.</small></div></div>
+                <div class="help-step"><span>4</span><div><strong>Execute e acompanhe</strong><small>O progresso aparece na fila e o resultado fica em Últimas atividades.</small></div></div>
+              </div>
               <div class="help-grid-info">
                 <div class="info-block">
-                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="eye-off"></span><span>Processamento 100% Offline</span></h3>
-                  <p>Nenhum arquivo ou dado sensível sai da sua máquina. Tudo é processado localmente, sem envio para a nuvem.</p>
+                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="eye-off"></span><span>Processamento local</span></h3>
+                  <p>Os arquivos são processados na máquina, sem upload para a nuvem. A pasta temporária é usada apenas durante operações que precisam de arquivos intermediários.</p>
                 </div>
                 <div class="info-block">
-                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="archive"></span><span>Limites Operacionais</span></h3>
-                  <p>A aplicação suporta arquivos grandes de até 2 GB. Acima de 200 MB, um aviso é exibido para reforçar que o arquivo pode exigir mais memória e tempo de processamento.</p>
+                  <h3 class="section-title-with-icon"><span class="section-title-icon" data-icon="folder-open"></span><span>Arquivos e pastas</span></h3>
+                  <p>O original não é sobrescrito. Altere a saída no botão <strong>Alterar saída</strong> ou defina uma pasta padrão em Configurações.</p>
                 </div>
+              </div>
+              <div class="help-note help-note-warning"><span data-icon="triangle-alert"></span><div><strong>Privacidade e assinatura</strong><p>Assinatura visual, marca d’água e tarja não são certificados digitais. Para documentos com validade jurídica, use o processo de assinatura digital aprovado pela sua organização.</p></div></div>
+              <div class="help-faq-grid">
+                <details><summary>O arquivo original é alterado?</summary><p>Não. O Central PDF gera uma nova cópia com o nome e a pasta mostrados na tela.</p></details>
+                <details><summary>Por que a pasta temporária aparece?</summary><p>Ela armazena dados intermediários enquanto a operação está em andamento. O resultado final deve aparecer na pasta de saída informada.</p></details>
+                <details><summary>Como encontro o resultado?</summary><p>Use o botão de sucesso em Últimas atividades para abrir diretamente o arquivo gerado.</p></details>
+                <details><summary>O que fazer quando algo falha?</summary><p>Confira formato, senha, espaço em disco e pasta de destino. Se continuar, abra Configurações e exporte o pacote de diagnóstico.</p></details>
               </div>
               <div class="help-demo-card">
                 <div class="animation-container anim-general">
@@ -1329,7 +1604,7 @@
             </div>
 
             <!-- IMAGES TO PDF -->
-            <div class="help-pane" id="help-pane-images-to-pdf">
+            <div class="help-pane" id="help-pane-images-to-pdf" role="tabpanel" aria-labelledby="help-tab-images-to-pdf" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="file-output"></span><span>Converter para PDF</span></h2>
               <p>Converta imagens, documentos Word e planilhas Excel em um único PDF padronizado.</p>
               <ul>
@@ -1348,12 +1623,13 @@
             </div>
 
             <!-- MERGE -->
-            <div class="help-pane" id="help-pane-merge">
+            <div class="help-pane" id="help-pane-merge" role="tabpanel" aria-labelledby="help-tab-merge" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="merge"></span><span>Mesclar</span></h2>
               <p>Junte vários arquivos PDF em um único documento, preservando a ordem escolhida.</p>
               <ul>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="archive"></span><div class="help-list-body"><strong>Limite:</strong> Até 80 arquivos PDF por mesclagem.</div></li>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="list"></span><div class="help-list-body"><strong>Ordem:</strong> Os arquivos são unidos de cima para baixo; arraste para reorganizar antes de mesclar.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-text"></span><div class="help-list-body"><strong>PDF pesquisável:</strong> Ative o OCR local na barra de saída para reconhecer páginas digitalizadas após a mesclagem. Isso aumenta o tempo de processamento.</div></li>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="info"></span><div class="help-list-body"><strong>Atenção:</strong> PDFs com assinatura digital podem perder a validade jurídica após a mesclagem.</div></li>
               </ul>
               <div class="help-demo-card">
@@ -1368,12 +1644,13 @@
             </div>
 
             <!-- SPLIT -->
-            <div class="help-pane" id="help-pane-split">
+            <div class="help-pane" id="help-pane-split" role="tabpanel" aria-labelledby="help-tab-split" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="scissors"></span><span>Separar PDFs</span></h2>
               <p>Divida um PDF em partes menores ou extraia páginas específicas.</p>
               <ul>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="scissors"></span><div class="help-list-body"><strong>Por intervalo:</strong> Extrai faixas de páginas, como 1-5 ou 8-12, em arquivos separados.</div></li>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="archive"></span><div class="help-list-body"><strong>Por tamanho:</strong> Divide automaticamente em partes que não ultrapassem o tamanho em MB escolhido.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-search"></span><div class="help-list-body"><strong>Por conteúdo:</strong> Pesquise uma palavra ou frase, inclusive em páginas escaneadas, ou peça sugestões de títulos recorrentes no topo de até 500 páginas. As sugestões são heurísticas e aparecem desmarcadas para revisão; marque os cortes desejados. A análise não altera o documento.</div></li>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="file"></span><div class="help-list-body"><strong>Páginas individuais:</strong> Salva cada página do documento como um PDF separado de 1 página.</div></li>
               </ul>
               <div class="help-demo-card">
@@ -1388,7 +1665,7 @@
             </div>
 
             <!-- SIGNATURE -->
-            <div class="help-pane" id="help-pane-signature">
+            <div class="help-pane" id="help-pane-signature" role="tabpanel" aria-labelledby="help-tab-signature" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="pen-line"></span><span>Assinar PDF</span></h2>
               <p>Desenhe ou carregue sua assinatura manuscrita diretamente sobre as páginas do PDF.</p>
               <ul>
@@ -1406,12 +1683,12 @@
             </div>
 
             <!-- PDF TO WORD -->
-            <div class="help-pane" id="help-pane-pdf-to-word">
+            <div class="help-pane" id="help-pane-pdf-to-word" role="tabpanel" aria-labelledby="help-tab-pdf-to-word" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="file-text"></span><span>PDF para Word</span></h2>
               <p>Converta documentos PDF em arquivos editáveis do Microsoft Word (.docx).</p>
               <ul>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="file-check"></span><div class="help-list-body"><strong>Recomendação:</strong> A conversão é 100% offline e funciona melhor em PDFs digitais com texto selecionável.</div></li>
-                <li class="help-list-item"><span class="help-list-icon" data-icon="info"></span><div class="help-list-body"><strong>Limitação:</strong> O app não faz OCR em imagens digitalizadas para evitar o envio de dados para a nuvem.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-text"></span><div class="help-list-body"><strong>Documentos digitalizados:</strong> Use <em>Reconhecer texto (OCR)</em> antes da conversão para criar uma camada pesquisável localmente. A formatação pode variar e o resultado deve ser revisado.</div></li>
               </ul>
               <div class="help-demo-card">
                 <div class="animation-container anim-word">
@@ -1423,8 +1700,26 @@
               </div>
             </div>
 
+            <!-- OCR -->
+            <div class="help-pane" id="help-pane-ocr" role="tabpanel" aria-labelledby="help-tab-ocr" aria-hidden="true">
+              <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="scan-text"></span><span>Reconhecer texto (OCR)</span></h2>
+              <p>Transforme documentos digitalizados em PDFs pesquisáveis ou arquivos de texto usando processamento local.</p>
+              <ul>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="shield-check"></span><div class="help-list-body"><strong>Privacidade:</strong> o reconhecimento usa modelos locais em português e inglês; seus documentos não são enviados para a internet.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="file-check-2"></span><div class="help-list-body"><strong>Formatos:</strong> adicione PDFs, PNG, JPG/JPEG ou TIFF. TIFF pode conter várias páginas; o aplicativo preserva todas elas no PDF final.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-text"></span><div class="help-list-body"><strong>Escolha o modo:</strong> Automático verifica cada página durante o processamento e reconhece apenas as que parecem precisar de OCR; Analisar todas as páginas força o reconhecimento; Refazer OCR substitui somente a camada criada pelo Central PDF. Você também pode informar páginas ou intervalos, como 1-3, 5.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="languages"></span><div class="help-list-body"><strong>Idioma:</strong> selecione português, inglês ou ambos. A leitura costuma ser melhor quando o idioma escolhido corresponde ao documento; se um modelo estiver indisponível, o aplicativo informa antes de iniciar.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="rotate-cw"></span><div class="help-list-body"><strong>Qualidade:</strong> em opções avançadas, você pode desmarcar separadamente <em>Corrigir páginas tortas</em> ou <em>Melhorar imagens de leitura fraca automaticamente</em>. Esta última só tenta contraste/ruído quando a leitura inicial é fraca; o aplicativo mantém o melhor resultado e não substitui a imagem original.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="circle-check"></span><div class="help-list-body"><strong>Resultado:</strong> páginas sem texto reconhecível permanecem no documento e são indicadas em avisos; cancelar não altera o original nem salva uma saída incompleta.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-line"></span><div class="help-list-body"><strong>Extrair uma região:</strong> no cartão abaixo dos arquivos, escolha um PDF, navegue até a página, marque a região com o mouse e copie o texto reconhecido. O PDF não é alterado.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="file-warning"></span><div class="help-list-body"><strong>Limites:</strong> imagens podem ter até 25 MB e 32 megapixels por página. TIFF também tem limite de 64 megapixels somando as páginas. Para um arquivo maior, reduza a resolução ou divida o documento.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="triangle-alert"></span><div class="help-list-body"><strong>Limitação:</strong> OCR pode errar em imagens pequenas, inclinadas, com sombras ou tabelas. Revise documentos sensíveis antes de usá-los.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="file-warning"></span><div class="help-list-body"><strong>Assinaturas digitais:</strong> quando o OCR gerar uma nova versão do PDF, a assinatura digital do original poderá deixar de ser válida. Guarde o original e valide ou assine a cópia final conforme o procedimento da sua empresa.</div></li>
+              </ul>
+            </div>
+
             <!-- ORGANIZE -->
-            <div class="help-pane" id="help-pane-organize">
+            <div class="help-pane" id="help-pane-organize" role="tabpanel" aria-labelledby="help-tab-organize" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="layout-list"></span><span>Organizar Páginas</span></h2>
               <p>Gerencie completamente a estrutura do seu documento: adicione novos PDFs ou imagens, reordene, duplique, rotacione ou exclua páginas de forma visual.</p>
               <ul>
@@ -1444,7 +1739,7 @@
             </div>
 
             <!-- WATERMARK -->
-            <div class="help-pane" id="help-pane-watermark">
+            <div class="help-pane" id="help-pane-watermark" role="tabpanel" aria-labelledby="help-tab-watermark" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="stamp"></span><span>Marca d'água</span></h2>
               <p>Aplique marcas textuais ou logotipos gráficos para proteção e classificação de documentos.</p>
               <ul>
@@ -1462,7 +1757,7 @@
             </div>
 
             <!-- COMPRESS -->
-            <div class="help-pane" id="help-pane-compress">
+            <div class="help-pane" id="help-pane-compress" role="tabpanel" aria-labelledby="help-tab-compress" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="zap"></span><span>Reduzir tamanho</span></h2>
               <p>Deixe PDFs e imagens mais leves para facilitar envio, armazenamento e compartilhamento.</p>
               <ul>
@@ -1479,7 +1774,7 @@
               </div>
             </div>
             <!-- PROTECT -->
-            <div class="help-pane" id="help-pane-protect">
+            <div class="help-pane" id="help-pane-protect" role="tabpanel" aria-labelledby="help-tab-protect" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="lock"></span><span>Proteger PDF</span></h2>
               <p>Criptografe seus arquivos PDF com senhas de segurança padrão da indústria.</p>
               <ul>
@@ -1497,7 +1792,7 @@
             </div>
 
             <!-- UNLOCK -->
-            <div class="help-pane" id="help-pane-unlock">
+            <div class="help-pane" id="help-pane-unlock" role="tabpanel" aria-labelledby="help-tab-unlock" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="unlock"></span><span>Desbloquear PDF</span></h2>
               <p>Remova a senha de abertura de um PDF protegido e gere uma nova cópia localmente.</p>
               <ul>
@@ -1515,12 +1810,14 @@
             </div>
 
             <!-- REDACT -->
-            <div class="help-pane" id="help-pane-redact">
+            <div class="help-pane" id="help-pane-redact" role="tabpanel" aria-labelledby="help-tab-redact" aria-hidden="true">
               <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="eye-off"></span><span>Ocultar Dados (Tarja Preta)</span></h2>
               <p>Remova dados sensíveis ou informações privadas aplicando tarjas de forma irreversível.</p>
               <ul>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="trash"></span><div class="help-list-body"><strong>Remoção permanente:</strong> O texto e os elementos ocultados são removidos do arquivo, impedindo recuperação por cópia de texto.</div></li>
                 <li class="help-list-item"><span class="help-list-icon" data-icon="pen-line"></span><div class="help-list-body"><strong>Uso:</strong> Selecione com o mouse a área a ser ocultada na pré-visualização e salve o arquivo final.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="scan-text"></span><div class="help-list-body"><strong>Busca em digitalizações:</strong> O OCR local sugere tarjas com confiança mínima de 75%. Confira cada região na página; OCR pode não encontrar todos os dados nem reconhecer tudo corretamente.</div></li>
+                <li class="help-list-item"><span class="help-list-icon" data-icon="shield-check"></span><div class="help-list-body"><strong>Remoção definitiva:</strong> páginas com tarjas são achatadas como imagem. Os marcadores de navegação do documento de origem não são copiados, pois seus títulos poderiam preservar texto que você ocultou.</div></li>
               </ul>
               <div class="help-demo-card">
                 <div class="animation-container anim-redact">
@@ -1545,7 +1842,7 @@
           <span class="queue-title">Fila de Processamento</span>
           <span id="queue-summary" class="queue-summary">Nenhuma tarefa</span>
         </div>
-        <span id="queue-active-count" class="queue-count">0 em fila</span>
+        <span id="queue-active-count" class="queue-count">Sem tarefas ativas</span>
       </div>
       <div id="queue-tasks-list" class="queue-tasks-list"></div>
     </section>
@@ -1566,6 +1863,24 @@
     </div>
   </div>
 
+  <div id="custom-prompt-modal" class="modal-overlay hidden" aria-modal="true" role="dialog" aria-labelledby="custom-prompt-title" aria-describedby="custom-prompt-message">
+    <div class="modal-container">
+      <div class="modal-header">
+        <span class="modal-icon info" data-icon="edit"></span>
+        <h3 id="custom-prompt-title">Nome do tópico</h3>
+      </div>
+      <div class="modal-body">
+        <p id="custom-prompt-message">Digite um nome para continuar.</p>
+        <label class="sr-only" for="custom-prompt-input">Nome do tópico</label>
+        <input id="custom-prompt-input" class="input-field" type="text" maxlength="180" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button id="custom-prompt-btn-cancel" type="button" class="btn-secondary">Cancelar</button>
+        <button id="custom-prompt-btn-ok" type="button" class="btn-primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="password-prompt-modal" class="modal-overlay hidden" aria-modal="true" role="dialog" aria-labelledby="password-prompt-title">
     <div class="modal-container password-prompt-modal-container">
       <div class="modal-header">
@@ -1578,7 +1893,7 @@
         <div class="password-input-shell">
           <input type="password" id="password-prompt-input" class="unlock-password-input password-prompt-input" placeholder="Digite a senha do PDF">
           <button type="button" id="password-prompt-toggle" class="password-visibility-toggle" title="Mostrar senha" aria-label="Mostrar senha" aria-pressed="false">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span data-icon="eye" aria-hidden="true"></span>
           </button>
         </div>
       </div>
@@ -1591,39 +1906,39 @@
 
   <!-- Document Details Modal -->
   <div id="document-details-modal" class="modal-overlay hidden" aria-modal="true" role="dialog">
-    <div class="modal-container" style="max-width: 440px;">
-      <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 12px;">
+    <div class="modal-container doc-details-container">
+      <div class="modal-header doc-details-header">
         <span class="modal-icon info" data-icon="info"></span>
-        <h3 id="doc-details-title" style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Detalhes do Documento</h3>
+        <h3 id="doc-details-title" class="doc-details-title">Detalhes do Documento</h3>
       </div>
-      <div class="modal-body" style="display: flex; flex-direction: column; gap: 10px; font-size: 0.86rem; color: var(--text-primary);">
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Nome:</span>
-          <span id="detail-doc-name" style="font-weight: 600; text-align: right; word-break: break-all; max-width: 250px;">-</span>
+      <div class="modal-body doc-details-body">
+        <div class="doc-details-row">
+          <span class="doc-details-label">Nome:</span>
+          <span id="detail-doc-name" class="doc-details-value doc-details-value--name">-</span>
         </div>
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Tamanho:</span>
-          <span id="detail-doc-size" style="font-weight: 600;">-</span>
+        <div class="doc-details-row">
+          <span class="doc-details-label">Tamanho:</span>
+          <span id="detail-doc-size" class="doc-details-value">-</span>
         </div>
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Total de Páginas:</span>
-          <span id="detail-doc-pages" style="font-weight: 600;">-</span>
+        <div class="doc-details-row">
+          <span class="doc-details-label">Total de Páginas:</span>
+          <span id="detail-doc-pages" class="doc-details-value">-</span>
         </div>
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Autor:</span>
-          <span id="detail-doc-author" style="font-weight: 600;">-</span>
+        <div class="doc-details-row">
+          <span class="doc-details-label">Autor:</span>
+          <span id="detail-doc-author" class="doc-details-value">-</span>
         </div>
-        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Criado em:</span>
-          <span id="detail-doc-created" style="font-weight: 600;">-</span>
+        <div class="doc-details-row">
+          <span class="doc-details-label">Criado em:</span>
+          <span id="detail-doc-created" class="doc-details-value">-</span>
         </div>
-        <div style="display: flex; justify-content: space-between; padding-bottom: 6px;">
-          <span style="color: var(--text-secondary); font-weight: 500;">Senha / Protegido:</span>
-          <span id="detail-doc-protected" style="font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 0.76rem;">-</span>
+        <div class="doc-details-row doc-details-row--last">
+          <span class="doc-details-label">Senha / Protegido:</span>
+          <span id="detail-doc-protected" class="doc-details-value doc-details-value--badge">-</span>
         </div>
       </div>
-      <div class="modal-footer" style="margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 12px; justify-content: flex-end;">
-        <button id="document-details-btn-close" class="btn-primary" style="min-height: 34px; height: 34px; padding: 0 16px;">Fechar</button>
+      <div class="modal-footer doc-details-footer">
+        <button id="document-details-btn-close" class="btn-primary doc-details-close-btn">Fechar</button>
       </div>
     </div>
   </div>
@@ -1645,6 +1960,18 @@
     <div class="recent-processed-footer">
       <span class="recent-processed-footer-note">Mostrando apenas os registros mais recentes.</span>
       <button id="recent-processed-modal-close" class="btn-secondary">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div id="command-palette-modal" class="modal-overlay hidden" aria-modal="true" role="dialog" aria-label="Paleta de comandos">
+    <div class="modal-container command-palette-container">
+      <div class="command-palette-search">
+        <span class="command-palette-search-icon" data-icon="search" aria-hidden="true"></span>
+        <input type="text" id="command-palette-input" class="command-palette-input" placeholder="Buscar ferramenta, ajuda ou ação..." autocomplete="off" aria-label="Buscar ferramenta, ajuda ou ação">
+        <span class="command-palette-hint">Esc para fechar</span>
+      </div>
+      <div id="command-palette-results" class="command-palette-results" role="listbox" aria-label="Resultados"></div>
     </div>
   </div>
 

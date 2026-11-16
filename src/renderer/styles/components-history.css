@@ -183,6 +183,18 @@
   color: var(--accent-color);
 }
 
+.command-palette-trigger {
+  border: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background-color var(--transition-fast);
+}
+
+.command-palette-trigger:hover {
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--bg-hover));
+  box-shadow: none;
+}
+
 .empty-state {
   padding: 24px;
   text-align: center;
@@ -198,7 +210,13 @@
   min-height: 220px;
   border: 1px dashed var(--border-strong);
   background: var(--bg-card);
-  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast), transform 140ms ease;
+}
+
+.file-upload-area:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .file-upload-area:hover,
@@ -207,11 +225,23 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.file-upload-area.drag-over {
+  cursor: copy;
+  transform: scale(1.006);
+}
+
 .file-input-hidden {
   position: absolute;
-  inset: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   opacity: 0;
-  cursor: pointer;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  pointer-events: none;
 }
 
 .file-input-detached-hidden {
@@ -291,6 +321,58 @@
   max-height: 210px;
 }
 
+/* The merge queue is the main work surface: use the available viewport
+   instead of leaving a large unused area below a short list. The output dock
+   remains fixed, while only the queue itself scrolls for large batches. */
+#tab-merge.active {
+  min-height: calc(100dvh - 112px);
+}
+
+#merge-file-list-container:not(.hidden) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: min(680px, calc(100dvh - 290px));
+}
+
+#merge-file-list-container:not(.hidden) .file-list-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 260px;
+  max-height: none;
+}
+
+#merge-file-list-container:not(.hidden) .action-file-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Keep the batch converter consistent with the merge workspace. */
+#tab-images-to-pdf.active {
+  min-height: calc(100dvh - 112px);
+}
+
+#images-pdf-workspace:not(.hidden) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: min(680px, calc(100dvh - 290px));
+}
+
+#images-pdf-workspace:not(.hidden) .file-list-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 260px;
+  max-height: none;
+}
+
+#images-pdf-workspace:not(.hidden) .action-file-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .section-heading.compact {
   margin-bottom: 0;
 }
@@ -316,6 +398,10 @@
   cursor: pointer;
 }
 
+.action-file-item {
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), padding-left var(--transition-fast);
+}
+
 .action-file-item:hover {
   background-color: var(--bg-hover);
 }
@@ -332,7 +418,7 @@
 
 .action-file-item-image {
   cursor: grab;
-  transition: border-color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
 }
 
 .action-file-item-image.drag-origin {
@@ -414,7 +500,7 @@
 
 .image-thumb-preview {
   display: block;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .image-thumb-placeholder {
@@ -542,8 +628,8 @@
 }
 
 .action-bar-settings {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(0, max-content) minmax(200px, max-content);
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 16px;
   --action-bar-control-height: 44px;
@@ -575,7 +661,7 @@
 .action-bar-settings .module-action-group--primary .btn-icon-label,
 .action-bar-settings .module-action-group--primary .btn-primary,
 .action-bar-settings .module-action-group--primary .btn-secondary {
-  width: auto;
+  width: 100%;
 }
 
 .action-bar-settings > * {
@@ -690,24 +776,72 @@
 
 .action-bar-settings--output-layout,
 .action-bar-settings--field-action {
-  grid-template-columns: minmax(320px, 1fr) minmax(0, max-content) minmax(200px, max-content);
-  grid-template-areas:
-    "field options action"
-    "hint . .";
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
   row-gap: 6px;
 }
 
+.module-output-dock {
+  position: fixed;
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  left: calc(var(--sidebar-width) + 30px);
+  right: 30px;
+  z-index: 90;
+  width: auto;
+  max-height: min(46vh, 260px);
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, var(--accent-color) 18%);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px) saturate(1.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.tab-content:has(.module-output-dock) {
+  padding-bottom: 300px;
+}
+
+.module-output-dock:focus-within {
+  border-color: color-mix(in srgb, var(--accent-color) 56%, var(--border-color));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24), 0 0 0 2px color-mix(in srgb, var(--accent-color) 24%, transparent);
+}
+
+/* Keep the final action visually above the fixed output dock in every module. */
+.module-output-dock :is(.btn-primary, .module-action-group--primary .btn-primary) {
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    0 10px 20px color-mix(in srgb, var(--accent-color) 34%, transparent),
+    0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.module-output-dock :is(.btn-primary, .module-action-group--primary .btn-primary):hover:not(:disabled) {
+  box-shadow:
+    0 13px 26px color-mix(in srgb, var(--accent-color) 44%, transparent),
+    0 6px 14px rgba(0, 0, 0, 0.28);
+}
+
+.module-output-dock :is(.btn-primary, .module-action-group--primary .btn-primary):focus-visible {
+  box-shadow:
+    0 10px 20px color-mix(in srgb, var(--accent-color) 34%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent-color) 38%, transparent);
+}
+
 .action-bar-settings--output-layout > .input-group,
 .action-bar-settings--field-action > .input-group {
-  grid-area: field;
+  flex: 1 1 clamp(320px, 42%, 760px);
   align-self: end;
   min-width: 0;
 }
 
 .action-bar-settings--output-layout > .settings-inline,
 .action-bar-settings--field-action > .settings-inline {
-  grid-area: options;
+  flex: 1 1 220px;
   align-self: end;
   min-height: var(--action-bar-control-height);
   flex-wrap: nowrap;
@@ -720,9 +854,8 @@
 .action-bar-settings--field-action > .module-action-group,
 .action-bar-settings--field-action > .btn-primary,
 .action-bar-settings--field-action > .btn-secondary {
-  grid-area: action;
+  flex: 1 1 220px;
   align-self: end;
-  justify-self: end;
   min-height: var(--action-bar-control-height);
   margin-top: 0;
 }
@@ -734,48 +867,30 @@
 
 .action-bar-settings--output-layout > .save-path-hint,
 .action-bar-settings--field-action > .save-path-hint {
-  grid-area: hint;
+  flex: 1 0 100%;
   align-self: start;
-  justify-self: start;
   margin-top: 0;
 }
 
 .action-bar-settings--watermark-output {
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, max-content);
-  grid-template-areas:
-    "field field"
-    "options action"
-    "hint hint";
-  row-gap: 8px;
-}
-
-.action-bar-settings--watermark-output > .input-group {
-  grid-area: field;
+  row-gap: 6px;
 }
 
 .action-bar-settings--watermark-output > .settings-inline {
-  grid-area: options;
-  justify-self: start;
-}
-
-.action-bar-settings--watermark-output > .module-action-group--primary {
-  grid-area: action;
+  justify-content: flex-start;
 }
 
 .action-bar-settings--images-pdf {
-  grid-template-columns: minmax(320px, 1fr) auto auto;
-  grid-template-areas:
-    "output options actions-bottom";
   align-items: end;
   row-gap: 0;
 }
 
 .images-pdf-output-group {
-  grid-area: output;
+  flex: 1 1 clamp(320px, 42%, 760px);
 }
 
 .images-pdf-options {
-  grid-area: options;
+  flex: 1 1 220px;
 }
 
 .section-heading-with-action--images-pdf {
@@ -790,30 +905,15 @@
 }
 
 .images-pdf-actions-top {
-  grid-area: actions-top;
 }
 
 .images-pdf-actions-bottom {
-  grid-area: actions-bottom;
+  flex: 1 1 220px;
 }
 
 .action-bar-settings--images-pdf.action-bar-settings--output-layout {
-  grid-template-columns: minmax(320px, 1fr) minmax(0, max-content) minmax(200px, max-content);
-  grid-template-areas:
-    "field options action"
-    "hint . .";
-}
-
-.action-bar-settings--images-pdf.action-bar-settings--output-layout > .input-group {
-  grid-area: field;
-}
-
-.action-bar-settings--images-pdf.action-bar-settings--output-layout > .settings-inline {
-  grid-area: options;
-}
-
-.action-bar-settings--images-pdf.action-bar-settings--output-layout > .module-action-group--primary {
-  grid-area: action;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 .action-bar-settings--images-pdf .settings-inline {

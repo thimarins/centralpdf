@@ -12,9 +12,10 @@ let saveChain = Promise.resolve();
 const VALID_COLOR_THEMES = new Set(['random', 'blue', 'red', 'olive', 'violet']);
 let currentConfig = {
   theme: APP_DEFAULTS.theme,
-  colorTheme: 'random',
+  colorTheme: 'blue',
   colorThemeCustomized: false,
   defaultOutputDir: '',
+  openOutputAutomatically: false,
   logRetentionDays: APP_DEFAULTS.logRetentionDays,
   recentHistory: [],
   maxFileSizeLimit: PDF_LIMITS.maxSupportedBytes,
@@ -117,12 +118,13 @@ function loadConfig() {
 }
 
 function normalizeConfigShape() {
+  currentConfig.openOutputAutomatically = currentConfig.openOutputAutomatically === true;
   currentConfig.colorTheme = VALID_COLOR_THEMES.has(currentConfig.colorTheme)
     ? currentConfig.colorTheme
-    : 'random';
+    : 'blue';
   currentConfig.colorThemeCustomized = currentConfig.colorThemeCustomized === true;
-  if (!currentConfig.colorThemeCustomized && currentConfig.colorTheme === 'blue') {
-    currentConfig.colorTheme = 'random';
+  if (!currentConfig.colorThemeCustomized && !currentConfig.policyColorThemeEnforced) {
+    currentConfig.colorTheme = 'blue';
   }
   currentConfig.logRetentionDays = Number.isInteger(currentConfig.logRetentionDays) && currentConfig.logRetentionDays > 0
     ? currentConfig.logRetentionDays
@@ -326,12 +328,16 @@ module.exports = {
   updateColorTheme: (color) => {
     if (currentConfig.policyColorThemeEnforced) return;
     currentConfig.colorTheme = color;
-    currentConfig.colorThemeCustomized = color !== 'random';
+    currentConfig.colorThemeCustomized = true;
     saveConfig();
   },
   updateOutputDir: (dir) => {
     if (currentConfig.policyOutputDirEnforced) return;
     currentConfig.defaultOutputDir = dir;
+    saveConfig();
+  },
+  updateOpenOutputAutomatically: (enabled) => {
+    currentConfig.openOutputAutomatically = enabled === true;
     saveConfig();
   }
 };

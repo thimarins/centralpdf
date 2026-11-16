@@ -1,4 +1,5 @@
 import { normalizeBinaryData, clamp } from '../pdf-preview-utils.js';
+import { formatDocumentMeta } from '../document-info.js';
 
 const SIGNATURE_FIELD_DEFAULTS = {
   signature: { widthRatio: 0.3, heightRatio: 0.08, color: '#000000', fontFamily: 'SegoeScript', opacity: 100, rotation: 0 },
@@ -58,6 +59,7 @@ export function createSignatureWorkspaceController(deps) {
   let dragState = null;
   let resizeState = null;
   let drawPadState = null;
+  let keyboardBindingsReady = false;
 
   function getCanvas() {
     return document.getElementById('signature-preview-canvas');
@@ -82,8 +84,8 @@ export function createSignatureWorkspaceController(deps) {
   }
 
   function ensureSelectedField() {
-    if (!state.signatureFields.some((field) => field.id === state.signatureSelectedFieldId)) {
-      state.signatureSelectedFieldId = state.signatureFields[0]?.id || '';
+    if (state.signatureSelectedFieldId && !state.signatureFields.some((field) => field.id === state.signatureSelectedFieldId)) {
+      state.signatureSelectedFieldId = '';
     }
   }
 
@@ -107,7 +109,7 @@ export function createSignatureWorkspaceController(deps) {
     if (fileName) fileName.textContent = state.signatureFile?.name || 'arquivo.pdf';
     if (fileMeta) {
       fileMeta.textContent = state.signatureFile
-        ? `${formatBytes(state.signatureFile.size)} • ${state.signaturePageCount || 0} páginas`
+        ? formatDocumentMeta(formatBytes, { ...state.signatureFile, pages: state.signaturePageCount })
         : '';
     }
     if (pageLabel) {
@@ -232,7 +234,7 @@ export function createSignatureWorkspaceController(deps) {
       drawPadState.lastX = x;
       drawPadState.lastY = y;
       state.signatureDrawHasInk = true;
-      updateDrawMeta('Desenho em andamento. Clique em "Usar como assinatura" quando terminar.');
+      updateDrawMeta('Desenho em andamento. Clique em "Usar e adicionar assinatura" quando terminar.');
     };
 
     const end = () => {
@@ -270,7 +272,7 @@ export function createSignatureWorkspaceController(deps) {
     if (!editor) return;
 
     if (!selected) {
-      editor.innerHTML = '<div class="empty-state">Adicione um campo para começar.</div>';
+      editor.innerHTML = `<div class="empty-state">${state.signatureFields.length ? 'Selecione um campo no preview para editar.' : 'Adicione um campo para começar.'}</div>`;
       return;
     }
 
@@ -619,7 +621,7 @@ export function createSignatureWorkspaceController(deps) {
     try {
       page = await pdfDoc.getPage(state.signatureCurrentPageIndex + 1);
     } catch (error) {
-      if (token !== renderToken || pdfDoc !== state.signaturePdfDoc) return;
+      if (token !== renderToken || pdfDoc !== state.signaturePdfDoc || /sendWithPromise|null/i.test(String(error?.message || ''))) return;
       throw error;
     }
     const viewport = page.getViewport({ scale: 1.25 });
@@ -663,7 +665,7 @@ export function createSignatureWorkspaceController(deps) {
       new Promise((_, reject) => setTimeout(() => {
         try {
           loadingTask.destroy?.();
-        } catch (_) {}
+        } catch {}
         reject(new Error('Timeout ao carregar a prévia do PDF.'));
       }, 20000))
     ]);
@@ -689,11 +691,11 @@ export function createSignatureWorkspaceController(deps) {
     const fieldEditor = document.getElementById('signature-field-editor');
     if (outputName) outputName.value = `${file.name.replace(/\.pdf$/i, '')}_assinado.pdf`;
     if (fileName) fileName.textContent = file.name;
-    if (fileMeta) fileMeta.textContent = formatBytes(file.size);
+    if (fileMeta) fileMeta.textContent = formatDocumentMeta(formatBytes, file);
     if (fieldEditor) fieldEditor.innerHTML = '<div class="empty-state">Carregando preview do documento...</div>';
     try {
       await loadPdfPreview(file);
-    } catch (error) {
+    } catch {
       const message = /\.pdf$/i.test(file?.name || '')
         ? 'Não foi possível abrir este PDF para assinatura. O arquivo pode estar corrompido, incompleto ou bloqueado.'
         : 'Selecione um arquivo PDF válido para assinar.';
@@ -767,7 +769,7 @@ export function createSignatureWorkspaceController(deps) {
     const sealFileName = document.getElementById('signature-seal-file-name');
     const sealMeta = document.getElementById('signature-seal-meta');
     if (sealFileName) sealFileName.textContent = file.name;
-    if (sealMeta) sealMeta.textContent = `${file.name} • ${formatBytes(file.size)}`;
+    if (sealMeta) sealMeta.textContent = formatDocumentMeta(formatBytes, file);
   }
 
   function getPendingMessage() {
@@ -815,6 +817,35 @@ export function createSignatureWorkspaceController(deps) {
         handler(event);
       });
     };
+
+    if (!keyboardBindingsReady) {
+      keyboardBindingsReady = true;
+      document.addEventListener('keydown', (event) => {
+        const tab = document.getElementById('tab-signature');
+        if (!tab?.classList.contains('active') || !state.signatureSelectedFieldId) return;
+
+        const target = event.target;
+        const isEditableTarget = target && (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable
+        );
+        if (isEditableTarget) return;
+
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          removeSelectedField();
+          return;
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          state.signatureSelectedFieldId = '';
+          renderOverlayLayer();
+        }
+      });
+    }
 
     window.addEventListener('resize', () => {
       if (state.signatureFile) {
@@ -887,7 +918,7 @@ export function createSignatureWorkspaceController(deps) {
       document.getElementById('signature-draw-panel')?.classList.toggle('hidden');
       ensureDrawPad();
       if (!state.signatureDrawnDataUrl) {
-        updateDrawMeta('Desenhe sua assinatura e clique em "Usar como assinatura".');
+        updateDrawMeta('Desenhe sua assinatura e clique em "Usar e adicionar assinatura".');
       }
     });
     bindClick('btn-clear-signature-draw', clearDrawCanvas);

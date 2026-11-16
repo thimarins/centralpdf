@@ -10,9 +10,9 @@ const MESSAGE_CATALOG = {
     "Operação concluída. Seu computador merece água agora."
   ],
   queued: [
-    "Fila em andamento. Os PDFs serão processados em sequência para manter estabilidade.",
-    "Tudo entrou na fila. Agora seguimos em ritmo seguro.",
-    "Tarefa adicionada. Vamos priorizar estabilidade antes da pressa."
+    "Solicitação recebida. O processamento começará em breve.",
+    "Aguardando o início do processamento.",
+    "Tarefa adicionada. O andamento aparecerá aqui."
   ],
   warning: [
     "Detectamos um cenário que merece cuidado extra.",
@@ -104,12 +104,14 @@ export function getOperationLabel(type) {
     "split-pages": "Separar PDFs",
     "split-range": "Separar PDFs",
     "split-size": "Separar PDFs",
+    "split-content": "Separar PDFs",
     organize: "Organizar Páginas",
     compress: "Reduzir tamanho",
     watermark: "Marca d'água",
     protect: "Proteger PDF",
     unlock: "Desbloquear PDF",
-    redact: "Ocultar Dados"
+    redact: "Ocultar Dados",
+    ocr: "Reconhecer texto (OCR)",
   };
 
   return map[type] || "Processamento PDF";

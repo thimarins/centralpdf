@@ -6,9 +6,14 @@ const { runQueueTests } = require('./run-queue-tests');
 const { runSecurityAudit } = require('./run-security-audit');
 const { runArchitectureAudit } = require('./run-architecture-audit');
 const { runPerformanceSmoke } = require('./run-performance-smoke');
+const { runLargeBatchStress } = require('./run-large-batch-stress');
+const { runOcrTests } = require('./run-ocr-tests');
+const { runOcrLogPrivacyTests } = require('./run-ocr-log-privacy-tests');
 const { runVisualAudit } = require('./run-visual-audit');
 const { runUiStructureAudit } = require('./run-ui-structure-audit');
+const { runCrossModuleAudit } = require('./run-cross-module-audit');
 const { runBuildCheck } = require('./run-build-check');
+const { runInstalledStartupAudit } = require('./run-installed-startup-audit');
 const { runRepoAudit } = require('./run-repo-audit');
 const { generateTestAssets } = require('./generate-test-assets');
 
@@ -47,12 +52,17 @@ async function runHealthCheck(options = {}) {
     const steps = [];
     steps.push(await runStep('functional', () => runFunctionalTests()));
     steps.push(await runStep('queue', () => runQueueTests()));
+    steps.push(await runStep('ocr-log-privacy', () => runOcrLogPrivacyTests()));
     steps.push(await runStep('security', () => runSecurityAudit()));
     steps.push(await runStep('architecture', () => runArchitectureAudit()));
     steps.push(await runStep('repo-hygiene', () => runRepoAudit()));
     steps.push(await runStep('performance-smoke', () => runPerformanceSmoke()));
+    steps.push(await runStep('large-batch-stress', () => runLargeBatchStress()));
+    steps.push(await runStep('ocr', () => runOcrTests()));
     steps.push(await runStep('visual-audit', () => runVisualAudit()));
     steps.push(await runStep('ui-structure-audit', () => runUiStructureAudit()));
+    steps.push(await runStep('cross-module-audit', () => runCrossModuleAudit()));
+    steps.push(await runStep('installed-startup-audit', () => runInstalledStartupAudit()));
     if (!skipBuildMinimum) {
       steps.push(await runStep('build-minimum', () => runBuildCheck({ full: false })));
     }

@@ -2,14 +2,50 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const { QUEUE_POLICY } = require('./constants');
 
-function createPdfWorkerExecution(payload, onProgress = () => {}) {
-  const worker = new Worker(path.join(__dirname, 'pdf-operation-worker.js'), {
-    workerData: payload
-  });
+function createOperationWorker(payload, WorkerClass) {
+  if (WorkerClass) {
+    return { worker: new WorkerClass(path.join(__dirname, 'pdf-operation-worker.js'), { workerData: payload }), start: () => {} };
+  }
+  if (process.versions.electron) {
+    const { utilityProcess } = require('electron');
+    const worker = utilityProcess.fork(path.join(__dirname, 'pdf-operation-worker.js'), [], {
+      serviceName: 'Central PDF operation',
+      stdio: 'ignore'
+    });
+    return { worker, start: () => worker.postMessage({ type: 'start', payload }) };
+  }
+  return {
+    worker: new Worker(path.join(__dirname, 'pdf-operation-worker.js'), { workerData: payload }),
+    start: () => {}
+  };
+}
+
+function createWorkerExitError(code, cancelledReason = '') {
+  if (cancelledReason === 'timeout') return new Error('OPERATION_TIMEOUT');
+  if (cancelledReason) return new Error('OPERATION_CANCELLED');
+  return new Error(`Worker stopped with exit code ${code}.`);
+}
+
+function createPdfWorkerExecution(payload, onProgress = () => {}, WorkerClass) {
+  const { worker, start } = createOperationWorker(payload, WorkerClass);
 
   let settled = false;
   let cancelledReason = '';
   let terminationHandle = null;
+  const disposeWorker = () => {
+    clearTimeout(terminationHandle);
+    terminationHandle = null;
+    if (typeof worker.terminate === 'function') worker.terminate().catch(() => {});
+    else worker.kill();
+  };
+  const releaseWorker = () => {
+    clearTimeout(terminationHandle);
+    terminationHandle = null;
+    // A completed operation posts its result before its `finally` block has
+    // finished cleaning temporary files/native objects. Let the worker exit
+    // naturally so native addons (notably Skia/canvas) are not unloaded while
+    // cleanup/finalizers are still running.
+  };
 
   const promise = new Promise((resolve, reject) => {
     worker.on('message', (message) => {
@@ -20,14 +56,18 @@ function createPdfWorkerExecution(payload, onProgress = () => {}) {
       }
       if (message.type === 'result') {
         settled = true;
-        clearTimeout(terminationHandle);
+        releaseWorker();
         resolve(message.payload);
         return;
       }
       if (message.type === 'error') {
         settled = true;
-        clearTimeout(terminationHandle);
+        releaseWorker();
         const err = new Error(message.payload.message || 'Worker failed.');
+        if (typeof message.payload.safeUserMessage === 'string' && message.payload.safeUserMessage.trim()) {
+          err.safeUserMessage = message.payload.safeUserMessage.trim().slice(0, 1000);
+        }
+        if (typeof message.payload.code === 'string') err.code = message.payload.code;
         if (message.payload.stack) {
           err.stack = message.payload.stack;
         }
@@ -35,17 +75,29 @@ function createPdfWorkerExecution(payload, onProgress = () => {}) {
       }
     });
 
-    worker.on('error', (error) => {
+    if (typeof worker.pid === 'number' && worker.pid > 0) {
+      start();
+    } else if (typeof worker.once === 'function') {
+      worker.once('spawn', start);
+    } else {
+      start();
+    }
+
+    worker.on('error', (...details) => {
       settled = true;
-      clearTimeout(terminationHandle);
+      disposeWorker();
+      const error = details[0] instanceof Error
+        ? details[0]
+        : new Error(`O processo de operação falhou${details[0] ? ` (${details[0]})` : ''}.`);
       reject(error);
     });
 
     worker.on('exit', (code) => {
-      if (!settled && code !== 0) {
-        const suffix = cancelledReason ? ` after ${cancelledReason}` : '';
-        reject(new Error(`Worker stopped with exit code ${code}${suffix}.`));
-      }
+      if (settled) return;
+      settled = true;
+      clearTimeout(terminationHandle);
+      terminationHandle = null;
+      reject(createWorkerExitError(code, cancelledReason));
     });
   });
 
@@ -56,7 +108,8 @@ function createPdfWorkerExecution(payload, onProgress = () => {}) {
       cancelledReason = reason;
       worker.postMessage({ type: 'cancel', reason });
       terminationHandle = setTimeout(() => {
-        worker.terminate().catch(() => {});
+        if (typeof worker.terminate === 'function') worker.terminate().catch(() => {});
+        else worker.kill();
       }, QUEUE_POLICY.workerTerminateDelayMs);
       terminationHandle.unref?.();
     }
@@ -64,5 +117,6 @@ function createPdfWorkerExecution(payload, onProgress = () => {}) {
 }
 
 module.exports = {
-  createPdfWorkerExecution
+  createPdfWorkerExecution,
+  createWorkerExitError
 };

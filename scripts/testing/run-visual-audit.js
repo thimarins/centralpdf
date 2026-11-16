@@ -11,12 +11,24 @@ async function runVisualAudit() {
     : '';
   const css = `${cssRoot}\n${cssPartials}`;
   const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
-  const iconCatalog = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ui', 'icons', 'fluent-icons.js'), 'utf8');
+  const iconCatalog = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ui', 'icons', 'lucide-icons.js'), 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const rendererFiles = [];
+  const collectRendererFiles = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) collectRendererFiles(fullPath);
+      else if (/\.(html|js)$/.test(entry.name) && fullPath !== path.join(ROOT, 'src', 'renderer', 'ui', 'icons', 'lucide-icons.js')) rendererFiles.push(fullPath);
+    }
+  };
+  collectRendererFiles(path.join(ROOT, 'src', 'renderer'));
+  const inlineSvgFiles = rendererFiles.filter((file) => /<svg[\s>]/i.test(fs.readFileSync(file, 'utf8')));
 
   const checks = [
     { name: 'Segoe UI Variable', ok: /Segoe UI Variable/i.test(css), details: 'tipografia do sistema' },
-    { name: 'Fluent icon catalog', ok: (Boolean(packageJson.dependencies?.['@fluentui/react-icons']) || Boolean(packageJson.devDependencies?.['@fluentui/react-icons'])) && /Fluent|icon/i.test(iconCatalog), details: 'biblioteca oficial presente' },
+    { name: 'Lucide icon catalog', ok: Boolean(packageJson.dependencies?.lucide) && /from ["']lucide["']/.test(iconCatalog) && /lucideIcon/.test(appJs), details: 'biblioteca Lucide centralizada' },
+    { name: 'No legacy icon catalog', ok: !fs.existsSync(path.join(ROOT, 'src', 'renderer', 'ui', 'icons', 'fluent-icons.js')) && !/fluent/i.test(iconCatalog), details: 'catálogo Fluent removido' },
+    { name: 'No inline renderer SVG', ok: inlineSvgFiles.length === 0, details: inlineSvgFiles.length === 0 ? 'todos os ícones passam pelo catálogo Lucide' : `SVGs fora do catálogo: ${inlineSvgFiles.map((file) => path.relative(ROOT, file)).join(', ')}` },
     { name: 'Reduced motion guard', ok: /prefers-reduced-motion/.test(css), details: 'respeito a acessibilidade de animacao' },
     { name: 'Sidebar active state', ok: /nav-item\.active/.test(css), details: 'estado ativo estilizado' },
     { name: 'Title icons in pages', ok: /title-with-icon/.test(html), details: 'titulos principais com icones' },

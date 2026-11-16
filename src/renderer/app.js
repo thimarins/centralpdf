@@ -1,99 +1,48 @@
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { createAboutPanelController } from "./settings/about/about-panel.js";
+import { initializeActionToolbars } from "./ui/action-toolbar.js";
 import { addPulseTemporarily } from "./ui/animations/motion.js";
-import { createFeedbackCenter } from "./ui/feedback/feedback-center.js";
 import { createPdfToWordWorkspaceController } from "./ui/conversion/pdf-to-word-workspace.js";
 import { createImageToPdfWorkspaceController } from "./ui/image-to-pdf/image-to-pdf-workspace.js";
-import { getPendingTabMessage, hasAnyPendingTabWork } from "./ui/navigation/pending-work.js";
+import { hasAnyPendingTabWork } from "./ui/navigation/pending-work.js";
 import { createOrganizeWorkspaceController } from "./ui/organize/organize-workspace.js";
 import { createQueueAndHistoryRenderer } from "./ui/queue/queue-status.js";
+import { createCommandPalette } from "./ui/command-palette/command-palette.js";
 import { createSignatureWorkspaceController } from "./ui/signature/signature-workspace.js";
 import { QUEUE_UI_THRESHOLDS, UI_ICON_SIZES } from "./ui/constants.js";
-import { fluentIcon, fluentIconByState, fluentToneIcon } from "./ui/icons/fluent-icons.js";
+import { lucideIcon, lucideIconByState, lucideToneIcon } from "./ui/icons/lucide-icons.js";
 import { buildFeedbackMessage, getOperationLabel } from "./ui/message-system/messages.js";
 import { createToastCenter } from "./ui/notifications/toast-center.js";
 import { createWatermarkWorkspaceController } from "./ui/watermark/watermark-workspace.js";
 import { createProtectWorkspaceController } from "./ui/security/protect-workspace.js";
 import { createUnlockWorkspaceController } from "./ui/security/unlock-workspace.js";
 import { createRedactWorkspaceController } from "./ui/redact/redact-workspace.js";
+import { createOcrAreaExtractor } from "./ui/ocr/ocr-area-extractor.js";
 import { downsampleImageAsBase64 } from "./ui/pdf-preview-utils.js";
+import { createAppState } from "./state/app-state.js";
+
+let systemThemeMediaQuery = null;
+let systemAppearance = { accentColor: "" };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-const state = {
-  appMeta: null,
-  appConfig: null,
-  runtimeColorTheme: "random",
-  activeTab: "dashboard",
-  dashboardSelectedPdfFile: null,
-  dashboardAutoRouteOnPick: false,
-  imagePdfFiles: [],
-  imagePdfDragIndex: null,
-  imagePdfSelectedIndex: null,
-  imagePdfOptimizedMode: false,
-  imagePdfUndoStack: [],
-  signatureFile: null,
-  signaturePdfDoc: null,
-  signaturePageCount: 0,
-  signatureCurrentPageIndex: 0,
-  signatureFields: [],
-  signatureSelectedFieldId: "",
-  signatureSealFile: null,
-  signatureSealPreviewUrl: "",
-  signatureDrawnDataUrl: "",
-  signatureDrawHasInk: false,
-  operationOutputDirs: {},
-  mergeFiles: [],
-  selectedSplitFile: null,
-  selectedCompressFile: null,
-  pdfToWordFile: null,
-  watermarkFiles: [],
-  watermarkImageFile: null,
-  watermarkPreviewImageDataUrl: "",
-  watermarkPreviewImageElement: null,
-  redactFile: null,
-  redactTempPaths: [],
-  organizeFile: null,
-  organizePdfDoc: null,
-  organizePages: [],
-  organizeRenderedPageIds: [],
-  organizeLowMemoryMode: false,
-  organizeUndoStack: [],
-  organizeTempPaths: [],
-  organizeSelection: new Set(),
-  organizeLastSelectedId: null,
-  organizeObserver: null,
-  organizeDrag: {
-    ids: [],
-    sourceId: null,
-    placeholderIndex: null
-  },
-  unlockFile: null,
-  queueSnapshot: [],
-  feedbackBannerMode: "",
-  dashboardSearchQuery: ""
-};
+const state = createAppState();
+let splitContentSearchRequestId = '';
+let splitContentStartPages = [];
+let refreshRecentFilesCards = null;
+let hideRecentFilesCard = () => {};
+let ocrImagePreviewUrl = '';
+let ocrImagePreviewToken = 0;
 
 const DASHBOARD_QUICK_ACTION_DEFAULT_ORDER = [
-  "images-to-pdf",
-  "merge",
-  "split",
-  "signature",
-  "pdf-to-word",
-  "organize",
-  "watermark",
-  "compress",
-  "protect",
-  "unlock",
-  "redact"
+  "images-to-pdf", "merge", "split", "signature", "pdf-to-word", "ocr",
+  "organize", "watermark", "compress", "protect", "unlock", "redact"
 ];
 
 const dom = {
   tabs: [...document.querySelectorAll(".nav-item")],
   tabContents: [...document.querySelectorAll(".tab-content")],
-  searchInput: document.getElementById("dashboard-search-input"),
-  searchClearButton: document.getElementById("dashboard-search-clear"),
   processedHistoryButton: document.getElementById("btn-dashboard-processed-history"),
   processedHistoryModal: document.getElementById("recent-processed-modal"),
   processedHistoryModalList: document.getElementById("recent-processed-modal-list"),
@@ -101,7 +50,6 @@ const dom = {
   historyList: document.getElementById("recent-history-list"),
   historyExpandFooter: document.getElementById("history-expand-footer"),
   btnToggleHistory: document.getElementById("btn-toggle-history"),
-  feedbackBanner: document.getElementById("app-feedback-banner"),
   toastRegion: document.getElementById("app-toast-region"),
   queueBar: document.getElementById("queue-status-bar"),
   queueActiveCount: document.getElementById("queue-active-count"),
@@ -113,7 +61,6 @@ const dom = {
 };
 
 const toastCenter = createToastCenter(dom.toastRegion);
-const feedbackCenter = createFeedbackCenter(dom.feedbackBanner);
 const organizeWorkspace = createOrganizeWorkspaceController({
   pdfjsLib,
   state,
@@ -124,7 +71,9 @@ const organizeWorkspace = createOrganizeWorkspaceController({
   showFeedbackBanner,
   buildFeedbackMessage,
   toneIcon,
-  formatBytes
+  formatBytes,
+  showCustomConfirmModal,
+  showCustomPromptModal
 });
 const imageToPdfWorkspace = createImageToPdfWorkspaceController({
   state,
@@ -157,7 +106,9 @@ const pdfToWordWorkspace = createPdfToWordWorkspaceController({
   clearFeedbackBanner,
   buildFeedbackMessage,
   toneIcon,
-  formatBytes
+  formatBytes,
+  analyzePdfForOcr: (payload) => window.api.analyzePdfForWordOcr(payload),
+  cancelPdfForOcrAnalysis: (requestId) => window.api.cancelPdfForWordOcrAnalysis(requestId)
 });
 const watermarkWorkspace = createWatermarkWorkspaceController({
   pdfjsLib,
@@ -173,7 +124,8 @@ const protectWorkspace = createProtectWorkspaceController({
   state,
   document,
   formatBytes,
-  showValidationMessage
+  showValidationMessage,
+  icon
 });
 const unlockWorkspace = createUnlockWorkspaceController({
   state,
@@ -192,12 +144,19 @@ const redactWorkspace = createRedactWorkspaceController({
   formatBytes,
   showValidationMessage
 });
+const ocrAreaExtractor = createOcrAreaExtractor({
+  pdfjsLib,
+  windowApi: window.api,
+  document,
+  notify,
+  getLanguage: () => document.getElementById('ocr-language')?.value || 'por+eng'
+});
 const queueAndHistory = createQueueAndHistoryRenderer({
   state,
   dom,
   windowApi: window.api,
   icon,
-  fluentIcon,
+  lucideIcon,
   safeProgress,
   formatDuration,
   escapeHtml,
@@ -212,6 +171,13 @@ const queueAndHistory = createQueueAndHistoryRenderer({
   showCustomConfirmModal,
   updateRecentHistory: updateRecentHistoryFromTask,
   getWorkflowSuggestionActions
+});
+const commandPalette = createCommandPalette({
+  switchTab,
+  escapeHtml,
+  state,
+  windowApi: window.api,
+  notify
 });
 const aboutPanel = createAboutPanelController({
   document,
@@ -244,10 +210,10 @@ let lastHandledLaunchRequest = { key: "", at: 0 };
 const queuedLaunchRequests = [];
 const LAUNCH_REQUEST_DEDUP_WINDOW_MS = 2500;
 
-function reportRuntimeIssue(scope, errorLike, context = "") {
-  const message = errorLike?.message || String(errorLike || "Erro inesperado");
-  const stack = errorLike?.stack || "";
-  const signature = `${scope}:${message}:${context}`;
+function reportRuntimeIssue(scope, errorLike) {
+  const errorName = typeof errorLike?.name === 'string' ? errorLike.name : 'Error';
+  const errorCode = typeof errorLike?.code === 'string' ? errorLike.code : '';
+  const signature = `${scope}:${errorName}:${errorCode}`;
   const now = Date.now();
 
   if (signature === lastRuntimeIssueSignature && now - lastRuntimeIssueAt < 2500) {
@@ -257,12 +223,11 @@ function reportRuntimeIssue(scope, errorLike, context = "") {
   lastRuntimeIssueSignature = signature;
   lastRuntimeIssueAt = now;
 
-  console.error(`[${scope}]`, errorLike);
+  console.error('[renderer-runtime] An interface error was captured.', { scope, errorName });
   window.api?.logRendererError?.({
     scope,
-    message,
-    stack,
-    context
+    errorName,
+    errorCode
   }).catch(() => {});
 
   notify({
@@ -279,7 +244,7 @@ function setupGlobalRuntimeGuards() {
 
   window.addEventListener("error", (event) => {
     const fallbackError = new Error(event.message || "Erro de interface");
-    reportRuntimeIssue("window-error", event.error || fallbackError, event.filename || "");
+    reportRuntimeIssue("window-error", event.error || fallbackError);
   });
 
   window.addEventListener("unhandledrejection", (event) => {
@@ -302,6 +267,24 @@ window.api?.onOperationFinished?.((task) => {
   if (!task || !task.id) return;
   if (task.status === "completed") {
     updateRecentHistoryFromTask(task, "sucesso");
+    const outputPath = task.result?.outputPath || task.result?.firstOutputPath || "";
+    if (state.appConfig?.openOutputAutomatically === true && outputPath) {
+      window.api.openPath(outputPath).then((result) => {
+        if (!result?.success) {
+          notify({
+            tone: "warning",
+            title: "Arquivo concluído",
+            message: result?.error || "O arquivo foi salvo, mas não foi possível abri-lo automaticamente."
+          });
+        }
+      }).catch((error) => {
+        notify({
+          tone: "warning",
+          title: "Arquivo concluído",
+          message: error?.message || "O arquivo foi salvo, mas não foi possível abri-lo automaticamente."
+        });
+      });
+    }
   } else if (task.status === "failed" || task.status === "timeout") {
     updateRecentHistoryFromTask(task, "falha");
   }
@@ -429,15 +412,23 @@ window.api?.onLaunchRequest?.((payload) => {
 });
 
 async function bootstrapApp() {
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "start" });
   rebuildSidebarLayout();
   renderDashboardShell();
   refreshDashboardDomRefs();
   hydrateStaticIcons();
+  initializeActionToolbars(document, window);
   setupGlobalRuntimeGuards();
   setupPasswordVisibilityToggles();
+  setupSystemThemeSync();
   dom.historyList.innerHTML = renderLoadingSkeleton(3);
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "shell-ready" });
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "loading-app-meta" });
   await loadAppMeta();
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "app-meta-ready" });
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "loading-app-config" });
   await loadAppConfig();
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "app-config-ready" });
   setupOneOffOutputDirectoryRouting();
   setupNavigation();
   setupDashboardEnhancements();
@@ -446,8 +437,13 @@ async function bootstrapApp() {
   setupOperations();
   removeDuplicateCompatibilityNotice();
   queueAndHistory.setupQueueStatus();
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "workspaces-ready" });
   window.setTimeout(showFirstRunHints, 350);
-  exposeAutomatedTestApi();
+  try {
+    if (await window.api?.isE2ETestMode?.()) exposeAutomatedTestApi();
+  } catch (error) {
+    console.warn('Modo de teste automatizado indisponível.', error);
+  }
   if (window.api?.consumeLaunchRequest) {
     try {
       const pendingLaunchRequest = await window.api.consumeLaunchRequest();
@@ -460,6 +456,7 @@ async function bootstrapApp() {
   }
   launchRequestHandlingReady = true;
   scheduleNonCriticalBootstrapWork();
+  window.api?.reportStartupPhase?.("renderer-bootstrap-step", { step: "launch-queue-ready" });
   while (queuedLaunchRequests.length > 0) {
     const payload = queuedLaunchRequests.shift();
     await processLaunchRequestPayload(payload);
@@ -503,7 +500,7 @@ function showFirstRunHints() {
       <span class="first-run-hint-icon">${icon("folder-open")}</span>
       <div>
         <strong>Pasta de destino</strong>
-        <span>Abra a pasta onde os resultados serão salvos. Se quiser, escolha um destino personalizado.</span>
+        <span>Abre sua pasta padrão, se definida; caso contrário, abre a pasta do último resultado. Sem resultados, fica indisponível.</span>
       </div>
     </div>
     <div class="first-run-hint-item">
@@ -569,6 +566,7 @@ function rebuildSidebarLayout() {
     redact: { label: "Ocultar Dados", icon: "eye-off" },
     "images-to-pdf": { label: "Converter para PDF", icon: "file-output" },
     "pdf-to-word": { label: "PDF para Word", icon: "file-text" },
+    ocr: { label: "Reconhecer texto (OCR)", icon: "scan-text" },
     help: { label: "Ajuda", icon: "info" },
     settings: { label: "Configurações", icon: "settings" }
   };
@@ -577,7 +575,7 @@ function rebuildSidebarLayout() {
     { label: "Começar", tabs: ["dashboard"] },
     { label: "Editar PDFs", tabs: ["merge", "split", "organize", "watermark", "compress"] },
     { label: "Segurança", tabs: ["signature", "protect", "unlock", "redact"] },
-    { label: "Conversão", tabs: ["images-to-pdf", "pdf-to-word"] },
+    { label: "Conversão", tabs: ["images-to-pdf", "pdf-to-word", "ocr"] },
     { label: "Configurações", tabs: ["help", "settings"] }
   ];
 
@@ -633,12 +631,12 @@ function renderDashboardShell() {
             <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="folder-open"></span><span>Atalho Rápido</span></h2>
           </div>
           <div class="dashboard-upload-inline">
-            <div class="dashboard-upload-box" id="dashboard-pdf-dropzone">
+            <div class="dashboard-upload-box" id="dashboard-pdf-dropzone" role="button" tabindex="0" aria-label="Selecionar ou arrastar um arquivo para o atalho rápido">
               <input type="file" id="dashboard-pdf-input" accept=".pdf,.jpg,.jpeg,.png" class="file-input-hidden">
               <div class="dashboard-upload-copy">
                 <span class="dashboard-upload-icon" data-icon="cloud-upload"></span>
                 <strong id="dashboard-selected-file-name">Arraste seu arquivo aqui</strong>
-                <span id="dashboard-selected-file-meta" style="margin-bottom: 4px;">PDF, JPG, JPEG ou PNG</span>
+                <span id="dashboard-selected-file-meta" style="margin-bottom: 4px;">PDF ou imagem (conforme a ferramenta)</span>
               </div>
             </div>
             <div class="dashboard-upload-aside">
@@ -649,9 +647,12 @@ function renderDashboardShell() {
                   <option value="merge">Mesclar</option>
                   <option value="split">Separar PDFs</option>
                   <option value="signature">Assinar PDF</option>
-                  <option value="protect">Proteger PDF</option>
-                  <option value="redact">Ocultar Dados</option>
                   <option value="pdf-to-word">PDF para Word</option>
+                  <option value="ocr">Reconhecer texto (OCR)</option>
+                  <option value="images-to-pdf">Converter imagem para PDF</option>
+                  <option value="protect">Proteger PDF</option>
+                  <option value="unlock">Desbloquear PDF</option>
+                  <option value="redact">Ocultar Dados</option>
                   <option value="compress">Reduzir tamanho</option>
                   <option value="watermark">Marca d'água</option>
                 </select>
@@ -661,58 +662,17 @@ function renderDashboardShell() {
           </div>
         </div>
 
-        <div class="card service-card-panel">
-          <div class="section-heading">
-            <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="list"></span><span>Ferramentas principais</span></h2>
-            <p>Escolha a opção mais próxima do que você quer fazer.</p>
+        <section class="card dashboard-recent-files-card" aria-labelledby="dashboard-recent-files-title">
+          <div class="dashboard-recent-files-heading">
+            <div class="section-heading">
+              <h2 id="dashboard-recent-files-title" class="section-title-with-icon"><span class="section-title-icon" data-icon="history"></span><span>Últimos arquivos usados</span></h2>
+              <p>Arquivos recentes do computador. Escolha um módulo compatível para continuar.</p>
+            </div>
+            <button id="btn-dashboard-refresh-recent-files" class="btn-secondary btn-sm btn-icon-label" type="button" data-icon="refresh-cw" aria-label="Atualizar arquivos recentes">Atualizar</button>
           </div>
-          <div class="quick-grid quick-grid-dashboard">
-            <button class="quick-btn quick-btn-image-pdf" data-go-tab="images-to-pdf" data-icon="file-output" data-search-label="converter para pdf arquivos imagens word excel docx xlsx">
-              <h3>Converter para PDF</h3>
-              <p>Converta imagens, documentos Word e planilhas Excel em PDF.</p>
-            </button>
-            <button class="quick-btn quick-btn-merge" data-go-tab="merge" data-icon="merge" data-search-label="mesclar pdf">
-              <h3>Mesclar</h3>
-              <p>Mescle vários PDFs em um só documento.</p>
-            </button>
-            <button class="quick-btn quick-btn-split" data-go-tab="split" data-icon="scissors" data-search-label="separar dividir paginas">
-              <h3>Separar</h3>
-              <p>Separe um PDF por página ou intervalo.</p>
-            </button>
-            <button class="quick-btn quick-btn-signature" data-go-tab="signature" data-icon="pen-line" data-search-label="assinar assinatura">
-              <h3>Assinar PDF</h3>
-              <p>Adicione assinatura visual de forma simples.</p>
-            </button>
-            <button class="quick-btn quick-btn-word" data-go-tab="pdf-to-word" data-icon="file-text" data-search-label="converter word docx">
-              <h3>PDF para Word</h3>
-              <p>Converta conteúdo do PDF para Word.</p>
-            </button>
-            <button class="quick-btn quick-btn-organize" data-go-tab="organize" data-icon="layout-list" data-search-label="organizar paginas ordem">
-              <h3>Organizar</h3>
-              <p>Reordene, exclua ou duplique páginas.</p>
-            </button>
-            <button class="quick-btn quick-btn-watermark" data-go-tab="watermark" data-icon="stamp" data-search-label="marca dagua texto imagem">
-              <h3>Marca d'água</h3>
-              <p>Aplique texto ou imagem sobre o documento.</p>
-            </button>
-            <button class="quick-btn quick-btn-compress" data-go-tab="compress" data-icon="zap" data-search-label="reduzir tamanho compactar imagem pdf">
-              <h3>Reduzir tamanho</h3>
-              <p>Deixe PDFs e imagens mais leves sem perder legibilidade.</p>
-            </button>
-            <button class="quick-btn quick-btn-protect" data-go-tab="protect" data-icon="lock" data-search-label="proteger senha seguranca">
-              <h3>Proteger PDF</h3>
-              <p>Defina senha e restrições de acesso.</p>
-            </button>
-            <button class="quick-btn quick-btn-unlock" data-go-tab="unlock" data-icon="unlock" data-search-label="desbloquear remover senha abrir pdf protegido">
-              <h3>Desbloquear PDF</h3>
-              <p>Remova a senha de abertura de um PDF protegido.</p>
-            </button>
-            <button class="quick-btn quick-btn-redact" data-go-tab="redact" data-icon="eye-off" data-search-label="ocultar dados tarja preta">
-              <h3>Ocultar Dados</h3>
-              <p>Esconda informações sensíveis de vez.</p>
-            </button>
-          </div>
-        </div>
+          <p id="dashboard-recent-files-status" class="dashboard-recent-files-status" role="status" aria-live="polite">Procurando arquivos recentes…</p>
+          <div id="dashboard-recent-files-list" class="dashboard-recent-files-list" aria-label="Arquivos recentes"></div>
+        </section>
       </div>
 
       <div class="card history-card dashboard-history-card">
@@ -756,11 +716,11 @@ if (document.readyState === "loading") {
 }
 
 function icon(name, options = {}) {
-  return fluentIcon(name, { size: UI_ICON_SIZES.quickAction, ...options });
+  return lucideIcon(name, { size: UI_ICON_SIZES.quickAction, ...options });
 }
 
 function toneIcon(tone, size = 20) {
-  return fluentToneIcon(tone, size);
+  return lucideToneIcon(tone, size);
 }
 
 function bindClick(id, handler) {
@@ -841,23 +801,77 @@ function renderLoadingSkeleton(lines = 3) {
   ).join("");
 }
 
-function notify(options = {}) {
+function normalizeGlobalNotification(options = {}) {
   const safeOptions = { ...options };
   if (safeOptions.title) safeOptions.title = normalizeMojibakeText(safeOptions.title);
   if (safeOptions.message) safeOptions.message = normalizeMojibakeText(safeOptions.message);
   if (safeOptions.detail) safeOptions.detail = normalizeMojibakeText(safeOptions.detail);
+
+  if (safeOptions.tone === "error") {
+    const message = String(safeOptions.message || "").trim();
+    const normalized = message.toLowerCase();
+    const moduleName = safeOptions.title && safeOptions.title !== "Central PDF"
+      ? `${safeOptions.title}: `
+      : "";
+    const standardMessages = [
+      ["não foi possível atualizar o preview.", "Não foi possível atualizar a prévia. Tente novamente; se o erro persistir, recarregue o arquivo."],
+      ["não foi possível atualizar a página.", "Não foi possível atualizar esta página. Tente novamente ou carregue o arquivo outra vez."],
+      ["erro ao renderizar e salvar imagens das páginas.", "Não foi possível renderizar e salvar as imagens. Verifique o arquivo e a pasta de saída."],
+      ["não foi possível preparar o arquivo de origem para extração.", "Não foi possível preparar o arquivo para extração. Verifique se ele ainda existe e pode ser lido."],
+      ["não foi possível abrir o arquivo selecionado.", "Não foi possível abrir o arquivo selecionado. Verifique se ele ainda existe, pode ser lido e possui formato compatível."],
+      ["não foi possível abrir este arquivo.", "Não foi possível abrir este arquivo. Verifique se ele ainda existe, pode ser lido e não está corrompido."]
+    ];
+    const match = standardMessages.find(([source]) => normalized === source);
+    if (match) {
+      safeOptions.message = `${moduleName}${match[1]}`;
+    }
+
+    const technicalTranslations = [
+      [/the pdf file is empty(?:,? i\.e\. its size is zero bytes)?\.?/i, "o PDF está vazio (tamanho zero)."],
+      [/the pdf file is corrupt(?:ed)?/i, "o PDF está corrompido."],
+      [/invalid pdf(?: file)?/i, "o PDF é inválido."],
+      [/file does not exist|file not found|invalid (?:input )?file path|enoent/i, "não foi possível localizar o arquivo selecionado."],
+      [/permission denied|access denied|eacces|eperm/i, "o arquivo não pode ser lido por falta de permissão."],
+      [/unable to (?:load|open|read) (?:the )?(?:pdf|file)/i, "não foi possível ler o arquivo."],
+      [/failed to (?:load|open|read|render|process)|cannot read properties|unknown renderer error|internal error/i, "não foi possível concluir esta etapa."],
+      [/operation_timeout|tempo limite excedido/i, "a operação demorou mais que o limite permitido."],
+      [/operation_cancelled|operação cancelada/i, "a operação foi cancelada."]
+    ];
+    const translated = technicalTranslations.find(([pattern]) => pattern.test(message));
+    if (translated) {
+      safeOptions.message = `${moduleName}${translated[1]}`;
+    }
+  }
+  if (safeOptions.tone === "error" && !safeOptions.id) {
+    const key = `${safeOptions.title || "erro"}:${safeOptions.message || ""}`.toLowerCase();
+    let hash = 0;
+    for (let index = 0; index < key.length; index += 1) {
+      hash = ((hash << 5) - hash + key.charCodeAt(index)) | 0;
+    }
+    safeOptions.id = `error-${Math.abs(hash)}`;
+  }
+  return safeOptions;
+}
+
+function notify(options = {}) {
+  const safeOptions = normalizeGlobalNotification(options);
   return toastCenter.notify({ title: "Central PDF", duration: 4200, ...safeOptions });
 }
 
 function showFeedbackBanner(options = {}) {
-  state.feedbackBannerMode = options.mode || "";
-  feedbackCenter.show(options);
+  const safeOptions = normalizeGlobalNotification(options);
+  const { mode, icon, detail, ...toastOptions } = safeOptions;
+  notify({
+    ...toastOptions,
+    id: toastOptions.id || (mode ? `feedback-${mode}` : undefined),
+    detail,
+    icon
+  });
 }
 
 function clearFeedbackBanner(mode = "") {
   if (mode && state.feedbackBannerMode && state.feedbackBannerMode !== mode) return;
   state.feedbackBannerMode = "";
-  feedbackCenter.clear();
 }
 
 function classifyWarningMessage(message) {
@@ -880,16 +894,8 @@ function showWarnings(warnings = [], title = "Atenção operacional") {
   const category = classifyWarningMessage(firstWarning);
   const additionalCount = uniqueWarnings.length - 1;
 
-  notify({
-    id: `warning-${category}-${firstWarning.slice(0, 24)}`,
-    tone: category === "warning" ? "warning" : "info",
-    title,
-    message: uniqueWarnings.length === 1
-      ? buildFeedbackMessage(category, { seed: firstWarning, detail: firstWarning })
-      : `${buildFeedbackMessage(category, { seed: firstWarning })} ${uniqueWarnings.length} avisos detectados.`
-  });
-
   showFeedbackBanner({
+    id: `warning-${category}-${firstWarning.slice(0, 24)}`,
     mode: "warning",
     tone: category === "warning" ? "warning" : "info",
     title,
@@ -917,8 +923,8 @@ function setupPasswordVisibilityToggles() {
     if (!button || button.dataset.iconReady === "true") return;
     button.innerHTML = `
       <span class="password-visibility-icon" aria-hidden="true">
-        <svg class="password-visibility-icon--show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.75 7.63 7.52 5 12 5s8.25 2.63 9.94 6.65a1 1 0 0 1 0 .7C20.25 16.37 16.48 19 12 19s-8.25-2.63-9.94-6.65"></path><circle cx="12" cy="12" r="3"></circle></svg>
-        <svg class="password-visibility-icon--hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-4.48 0-8.25-2.63-9.94-6.65a1 1 0 0 1 0-.7 11.69 11.69 0 0 1 5-5.77"></path><path d="M9.9 4.24A10.72 10.72 0 0 1 12 4c4.48 0 8.25 2.63 9.94 6.65a1 1 0 0 1 0 .7 11.73 11.73 0 0 1-1.67 2.68"></path><path d="M14.12 14.12a3 3 0 0 1-4.24-4.24"></path><path d="M3 3l18 18"></path></svg>
+        <span class="password-visibility-icon--show">${icon("eye")}</span>
+        <span class="password-visibility-icon--hide">${icon("eye-off")}</span>
       </span>
     `;
     button.dataset.iconReady = "true";
@@ -1004,6 +1010,34 @@ function normalizeOperationErrorMessage(type, error) {
     normalized.includes("does not exist")
   );
 
+  const mergeInputIssue = type === "merge" && (
+    normalized.includes("não foi possível abrir este arquivo")
+    || normalized.includes("não foi possível abrir o arquivo selecionado")
+    || normalized.includes("arquivo de entrada inválido")
+    || normalized.includes("arquivo de entrada inválido ou ausente")
+    || normalized.includes("file is invalid")
+    || normalized.includes("file does not exist")
+    || normalized.includes("does not exist")
+    || normalized.includes("invalid input pdf path")
+    || normalized.includes("invalid pdf path")
+  );
+
+  const mergeNamedInputIssue = type === "merge"
+    ? rawMessage.match(/Falha no arquivo\s*["']?([^"']+)["']?:\s*(.+)$/i)
+    : null;
+
+  if (type === "merge" && normalized.includes("não foi possível mesclar porque")) {
+    return rawMessage;
+  }
+
+  if (mergeNamedInputIssue?.[1] && mergeNamedInputIssue?.[2]) {
+    return `O arquivo "${mergeNamedInputIssue[1].trim()}" não pôde ser mesclado: ${mergeNamedInputIssue[2].trim()}`;
+  }
+
+  if (mergeInputIssue) {
+    return "A mesclagem foi interrompida porque um dos arquivos não pôde ser lido. Confira se todos os PDFs ainda existem, não estão abertos exclusivamente em outro programa, corrompidos ou protegidos por senha; depois remova e adicione novamente o arquivo com problema.";
+  }
+
   if (rawMessage.includes("Error invoking remote method 'queue-operation'")) {
     if (rawMessage.includes("ERR_INVALID_ARG_TYPE") || rawMessage.includes("Received undefined")) {
       return type === "unlock"
@@ -1048,7 +1082,7 @@ function normalizeOperationErrorMessage(type, error) {
     normalized.includes("too large") ||
     normalized.includes("does not exist")
   ) {
-    return "Não foi possível abrir este arquivo.";
+    return "Não foi possível abrir o arquivo selecionado. Verifique se ele ainda existe, está acessível e não está protegido por senha.";
   }
 
   if (type === "unlock") {
@@ -1076,21 +1110,16 @@ function normalizeOperationErrorMessage(type, error) {
 
 function showOperationFailure(type, error) {
   const detail = normalizeOperationErrorMessage(type, error);
+  // Uma falha não deve aparecer simultaneamente no banner persistente e no toast:
+  // isso parece um erro duplicado e pode esconder a mensagem mais recente.
+  clearFeedbackBanner();
   notify({
+    id: `operation-error-${type}`,
     tone: "error",
     title: getOperationLabel(type),
     message: detail,
     important: true,
     duration: 6200
-  });
-  showFeedbackBanner({
-    mode: "error",
-    tone: "error",
-    title: getOperationLabel(type),
-    message: detail,
-    detail: "",
-    icon: toneIcon("error", 18),
-    duration: 6500
   });
 }
 
@@ -1104,7 +1133,7 @@ function showOperationQueuedFeedback(type, result = {}) {
   });
 
   if (result.warnings?.length) {
-    showWarnings(result.warnings, `${getOperationLabel(type)} com proteções`);
+    showWarnings(result.warnings, `${getOperationLabel(type)} com avisos`);
     return;
   }
 
@@ -1144,8 +1173,9 @@ function renderNavItemIcon(button) {
     button.appendChild(labelSlot);
   }
 
-  iconSlot.innerHTML = fluentIconByState(name, { size: UI_ICON_SIZES.nav, active: isActive });
+  iconSlot.innerHTML = lucideIconByState(name, { size: UI_ICON_SIZES.nav, active: isActive });
   labelSlot.textContent = text;
+  button.title = text;
 }
 
 function hydrateStaticIcons() {
@@ -1161,7 +1191,7 @@ function hydrateStaticIcons() {
     if (element.classList.contains("help-nav-btn")) {
       const text = escapeHtml(element.textContent.trim());
       const isActive = element.classList.contains("active");
-      element.innerHTML = `${fluentIconByState(name, { size: 18, active: isActive })}<span style="margin-left: 8px;">${text}</span>`;
+      element.innerHTML = `${lucideIconByState(name, { size: 18, active: isActive })}<span style="margin-left: 8px;">${text}</span>`;
       return;
     }
 
@@ -1186,7 +1216,10 @@ function hydrateStaticIcons() {
     }
 
     if (element.classList.contains("btn-icon-label")) {
-      const text = escapeHtml(element.textContent.trim());
+      const label = element.textContent.trim();
+      if (label && !element.hasAttribute("aria-label")) element.setAttribute("aria-label", label);
+      if (label && !element.hasAttribute("title")) element.setAttribute("title", label);
+      const text = escapeHtml(label);
       element.innerHTML = `${icon(name, {
         size: getContextualIconSize(element),
         filled: element.classList.contains("btn-primary")
@@ -1210,7 +1243,7 @@ async function loadAppConfig() {
   try {
     state.appConfig = await window.api.getConfig();
     applyTheme(state.appConfig.theme);
-    applyColorTheme(state.appConfig.colorTheme || "random");
+    applyColorTheme(state.appConfig.colorTheme || "blue");
 
     const outDirInput = document.getElementById("setting-output-dir");
     const clearOutDirBtn = document.getElementById("btn-clear-output-dir");
@@ -1219,7 +1252,8 @@ async function loadAppConfig() {
     clearOutDirBtn.classList.toggle("hidden", !state.appConfig.defaultOutputDir);
 
     document.getElementById("setting-theme").value = state.appConfig.theme;
-    document.getElementById("setting-color-theme").value = state.appConfig.colorTheme || "random";
+    document.getElementById("setting-color-theme").value = state.appConfig.colorTheme || "blue";
+    document.getElementById("setting-open-output-automatically").checked = state.appConfig.openOutputAutomatically === true;
 
     const runModeSpan = document.getElementById("setting-run-mode");
     runModeSpan.textContent = state.appConfig.isPortableMode ? "Portátil" : "Instalado";
@@ -1251,7 +1285,8 @@ function updateSavePathHints() {
     "compress-output-name",
     "protect-output-name",
     "unlock-output-name",
-    "redact-output-name"
+    "redact-output-name",
+    "ocr-output-name"
   ];
 
   filenameInputIds.forEach((id) => {
@@ -1291,7 +1326,8 @@ function updateSavePathHints() {
       "compress-output-name": "compress",
       "protect-output-name": "protect",
       "unlock-output-name": "unlock",
-      "redact-output-name": "redact"
+      "redact-output-name": "redact",
+      "ocr-output-name": "ocr"
     };
     const operationType = operationByInputId[id];
     let controls = inputGroup.querySelector(".output-name-controls");
@@ -1304,9 +1340,9 @@ function updateSavePathHints() {
       const changeFolderButton = document.createElement("button");
       changeFolderButton.type = "button";
       changeFolderButton.className = "btn-secondary btn-sm btn-icon-label output-folder-button";
-      changeFolderButton.title = "Escolher uma pasta de destino somente para esta operação";
-      changeFolderButton.setAttribute("aria-label", "Escolher pasta de destino para esta operação");
-      changeFolderButton.innerHTML = `${icon("folder-open")}<span>Alterar pasta</span>`;
+      changeFolderButton.title = "Alterar a saída desta operação";
+      changeFolderButton.setAttribute("aria-label", "Alterar saída desta operação");
+      changeFolderButton.innerHTML = `${icon("folder-open")}<span>Alterar saída</span>`;
       changeFolderButton.addEventListener("click", async () => {
         const directory = await window.api.selectDirectory();
         if (!directory) return;
@@ -1319,7 +1355,8 @@ function updateSavePathHints() {
     hint.dataset.inputId = id;
 
     if (actionBar) {
-      actionBar.classList.add("action-bar-settings--output-layout");
+      actionBar.classList.add("action-bar-settings--output-layout", "module-output-dock");
+      actionBar.setAttribute("aria-label", "Opções de saída e ação principal");
       if (hint.parentNode !== actionBar) {
         actionBar.appendChild(hint);
       }
@@ -1469,6 +1506,46 @@ function repairVisibleMojibake(root = document.body) {
     }
   }
 
+function getEffectiveTheme(theme = state.appConfig?.theme || "system") {
+  if (theme === "light" || theme === "dark") return theme;
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+}
+
+function syncSystemThemeState() {
+  const configuredTheme = state.appConfig?.theme || "system";
+  const effectiveTheme = getEffectiveTheme(configuredTheme);
+  document.body.dataset.effectiveTheme = effectiveTheme;
+  document.documentElement.style.colorScheme = effectiveTheme;
+  document.body.classList.toggle("theme-system-dark", configuredTheme === "system" && effectiveTheme === "dark");
+  document.body.classList.toggle("theme-system-light", configuredTheme === "system" && effectiveTheme === "light");
+  if (configuredTheme === "system") updateDashboardThemeButton();
+}
+
+function applySystemAccentColor(appearance = {}) {
+  const accentColor = String(appearance.accentColor || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(accentColor)) {
+    systemAppearance = { ...systemAppearance, ...appearance, accentColor };
+    document.body.style.setProperty("--system-accent-color", accentColor);
+  }
+  if (state.appConfig?.theme === "system" && state.appConfig?.colorTheme === "random") {
+    applyColorTheme("random");
+  }
+}
+
+function setupSystemThemeSync() {
+  if (!window.matchMedia || systemThemeMediaQuery) return;
+  systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const handleSystemThemeChange = () => syncSystemThemeState();
+  if (typeof systemThemeMediaQuery.addEventListener === "function") {
+    systemThemeMediaQuery.addEventListener("change", handleSystemThemeChange);
+  } else {
+    systemThemeMediaQuery.addListener(handleSystemThemeChange);
+  }
+  syncSystemThemeState();
+  window.api?.getSystemAppearance?.().then(applySystemAccentColor).catch(() => {});
+  window.api?.onSystemAppearanceUpdated?.(applySystemAccentColor);
+}
+
 function applyTheme(theme) {
   document.body.classList.remove("theme-light", "theme-dark", "theme-system");
   if (theme === "dark") {
@@ -1478,21 +1555,26 @@ function applyTheme(theme) {
   } else {
     document.body.classList.add("theme-system");
   }
+  syncSystemThemeState();
 }
 
 function applyColorTheme(color) {
   document.body.classList.remove("theme-color-blue", "theme-color-red", "theme-color-olive", "theme-color-violet");
   const palette = ["blue", "red", "olive", "violet"];
-  if (color === "random") {
+  if (color === "random" && state.appConfig?.theme === "system" && systemAppearance.accentColor) {
+    state.runtimeColorTheme = "system";
+    color = "system";
+  } else if (color === "random") {
     const picked = palette[Math.floor(Math.random() * palette.length)] || "blue";
     state.runtimeColorTheme = picked;
     color = picked;
   } else {
     state.runtimeColorTheme = color || "blue";
   }
-  if (color && color !== "blue") {
+  if (color && color !== "blue" && color !== "system") {
     document.body.classList.add(`theme-color-${color}`);
   }
+  document.body.classList.toggle("theme-color-system", color === "system");
 }
 
 function getGreetingLabel(date = new Date()) {
@@ -1537,21 +1619,55 @@ function updateDashboardThemeButton() {
   if (!button) return;
   const currentTheme = state.appConfig?.theme || "system";
   if (currentTheme === "system") {
-    button.innerHTML = fluentIcon("desktop", { size: 20 });
+    button.innerHTML = lucideIcon("desktop", { size: 20 });
     button.title = "Tema: Sistema (clique para mudar para tema Claro)";
   } else if (currentTheme === "light") {
-    button.innerHTML = fluentIcon("weather-sunny", { size: 20 });
+    button.innerHTML = lucideIcon("weather-sunny", { size: 20 });
     button.title = "Tema: Claro (clique para mudar para tema Escuro)";
   } else {
-    button.innerHTML = fluentIcon("weather-moon", { size: 20 });
+    button.innerHTML = lucideIcon("weather-moon", { size: 20 });
     button.title = "Tema: Escuro (clique para mudar para tema do Sistema)";
   }
+}
+
+function getDashboardDestinationTarget() {
+  const defaultDir = state.appConfig?.defaultOutputDir?.trim() || "";
+  if (defaultDir) return { path: defaultDir, source: "default" };
+
+  const historyItems = Array.isArray(state.appConfig?.recentHistory) ? state.appConfig.recentHistory : [];
+  for (const item of historyItems) {
+    if (item?.status !== "sucesso") continue;
+    const outputDir = String(item.outputDir || "").trim();
+    if (outputDir) return { path: outputDir, source: "recent" };
+
+    const outputPath = String(item.outputPath || item.firstOutputPath || "").trim();
+    const separatorIndex = Math.max(outputPath.lastIndexOf("\\"), outputPath.lastIndexOf("/"));
+    if (separatorIndex > 0) return { path: outputPath.slice(0, separatorIndex), source: "recent" };
+  }
+
+  return null;
 }
 
 function updateDashboardDefaultDirButton() {
   const button = document.getElementById("btn-dashboard-open-default-dir");
   if (!button) return;
 
+  const target = getDashboardDestinationTarget();
+  button.disabled = !target;
+  button.title = target?.source === "default"
+    ? `Abrir pasta padrão de destino\n${target.path}`
+    : target
+      ? `Abrir pasta do último arquivo gerado\n${target.path}`
+      : "Nenhuma pasta disponível. Processe um arquivo ou defina uma pasta padrão.";
+  button.setAttribute("aria-label", target?.source === "default"
+    ? `Abrir pasta padrão de destino: ${target.path}`
+    : target
+      ? `Abrir pasta do último arquivo gerado: ${target.path}`
+      : "Nenhuma pasta disponível ainda");
+  button.innerHTML = lucideIcon("folder-open", { size: 20 });
+  return;
+
+  /* Lógica anterior mantida comentada durante a transição para o destino contextual.
   const defaultDir = state.appConfig?.defaultOutputDir || "";
   button.disabled = !defaultDir;
   button.title = defaultDir
@@ -1560,7 +1676,8 @@ function updateDashboardDefaultDirButton() {
   button.setAttribute("aria-label", defaultDir
     ? `Abrir pasta personalizada: ${defaultDir}`
     : "Arquivos salvos na pasta de origem; nenhuma pasta personalizada cadastrada");
-  button.innerHTML = fluentIcon("folder-open", { size: 20 });
+  button.innerHTML = lucideIcon("folder-open", { size: 20 });
+  */
 }
 
 function updateDashboardSummary() {
@@ -1661,131 +1778,6 @@ function sortDashboardQuickCards() {
   cards.forEach((card) => grid.appendChild(card));
 }
 
-
-let dashboardSearchHighlight = null;
-
-function normalizeSearchText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function getSearchableText(element) {
-  if (!element) return "";
-  const pieces = [
-    element.getAttribute?.("aria-label"),
-    element.getAttribute?.("title"),
-    element.getAttribute?.("placeholder"),
-    element.textContent,
-    element.value
-  ].filter(Boolean);
-
-  return normalizeSearchText(pieces.join(" "));
-}
-
-function clearDashboardSearchHighlight() {
-  if (dashboardSearchHighlight) {
-    dashboardSearchHighlight.classList.remove("search-match-highlight");
-    dashboardSearchHighlight = null;
-  }
-}
-
-function markDashboardSearchHighlight(element) {
-  clearDashboardSearchHighlight();
-  if (!element) return;
-  element.classList.add("search-match-highlight");
-  dashboardSearchHighlight = element;
-  element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-}
-
-function updateDashboardSearchClearButton(query) {
-  if (!dom.searchClearButton) return;
-  dom.searchClearButton.classList.toggle("hidden", !String(query || "").trim());
-}
-
-function getDashboardSearchScope() {
-  return document.getElementById(`tab-${state.activeTab}`) || document.body;
-}
-
-function findFirstScopedSearchMatch(scope, query) {
-  if (!scope || !query) return null;
-  const normalizedQuery = normalizeSearchText(query);
-  const selectors = [
-    "h1", "h2", "h3", "h4", "h5",
-    "p", "li", "label", "button", "summary",
-    ".card", ".page-card", ".empty-state", ".input-help",
-    ".section-title-with-icon", ".title-with-icon",
-    ".section-heading", ".section-title", ".help-card",
-    ".help-pane", ".help-nav-btn", ".setting-row",
-    ".settings-inline", ".toggle",
-    ".tab-header"
-  ].join(", ");
-
-  const candidates = [...scope.querySelectorAll(selectors)]
-    .filter((element) => element.offsetParent !== null && !element.closest(".hidden"));
-
-  return candidates.find((element) => {
-    const text = getSearchableText(element);
-    return text && text.includes(normalizedQuery);
-  }) || null;
-}
-
-function applyDashboardSearch(query) {
-  const normalizedQuery = normalizeSearchText(query);
-  state.dashboardSearchQuery = String(query || "");
-  updateDashboardSearchClearButton(query);
-
-  document.querySelectorAll(".sidebar-nav .nav-item, .help-nav-btn, .quick-btn, [data-search-label]").forEach((button) => {
-    const label = button.getAttribute("data-search-label")
-      || button.getAttribute("data-nav-label")
-      || button.textContent
-      || "";
-    const matches = !normalizedQuery || normalizeSearchText(label).includes(normalizedQuery);
-    button.classList.toggle("search-hidden", !matches);
-  });
-
-  document.querySelectorAll(".sidebar-nav .nav-group").forEach((group) => {
-    const visibleItems = [...group.querySelectorAll(".nav-item")].some((button) => !button.classList.contains("search-hidden"));
-    group.classList.toggle("search-hidden", !visibleItems);
-  });
-
-  document.querySelectorAll("#tab-dashboard .quick-btn").forEach((button) => {
-    const label = `${button.textContent} ${button.getAttribute("data-search-label") || ""}`;
-    const matches = !normalizedQuery || normalizeSearchText(label).includes(normalizedQuery);
-    button.classList.toggle("search-hidden", !matches);
-  });
-
-  clearDashboardSearchHighlight();
-  if (!normalizedQuery) return;
-
-  const searchScope = getDashboardSearchScope();
-  let target = null;
-
-  if (state.activeTab === "help") {
-    const helpButtons = [...searchScope.querySelectorAll(".help-nav-btn")];
-    target = helpButtons.find((button) => {
-      const text = getSearchableText(button);
-      return text.includes(normalizedQuery);
-    }) || null;
-
-    if (target && target.classList.contains("help-nav-btn")) {
-      target.click();
-      target = null;
-      requestAnimationFrame(() => {
-        const refreshedScope = getDashboardSearchScope();
-        const refreshedTarget = findFirstScopedSearchMatch(refreshedScope, normalizedQuery);
-        markDashboardSearchHighlight(refreshedTarget);
-      });
-      return;
-    }
-  }
-
-  target = findFirstScopedSearchMatch(searchScope, normalizedQuery);
-  markDashboardSearchHighlight(target);
-}
-
 function setDashboardSelectedPdfFile(file) {
   state.dashboardSelectedPdfFile = file || null;
   const fileNameNode = document.getElementById("dashboard-selected-file-name");
@@ -1803,6 +1795,8 @@ function setDashboardSelectedPdfFile(file) {
 }
 
 function getDashboardAcceptedExtensions(action) {
+  if (action === "ocr") return ".pdf,.jpg,.jpeg,.png,.tif,.tiff";
+  if (action === "images-to-pdf") return ".jpg,.jpeg,.png,.docx,.xlsx";
   if (["organize", "merge", "compress", "watermark", "redact"].includes(action)) {
     return ".pdf,.jpg,.jpeg,.png";
   }
@@ -1812,14 +1806,187 @@ function getDashboardAcceptedExtensions(action) {
 function matchesDashboardAction(file, action) {
   const name = String(file?.name || "").toLowerCase();
   if (!name) return false;
+  if (action === "ocr") return /\.(pdf|jpg|jpeg|png|tif|tiff)$/i.test(name);
+  if (action === "images-to-pdf") return /\.(jpg|jpeg|png|docx|xlsx)$/i.test(name);
   if (["organize", "merge", "compress", "watermark", "redact"].includes(action)) {
     return /\.(pdf|jpg|jpeg|png)$/i.test(name);
   }
   return /\.pdf$/i.test(name);
 }
 
+const DASHBOARD_RECENT_FILE_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".docx", ".xlsx"];
+const DASHBOARD_RECENT_MODULES = {
+  organize: "Organizar páginas",
+  merge: "Mesclar PDFs",
+  split: "Separar PDF",
+  signature: "Assinar PDF",
+  "pdf-to-word": "PDF para Word",
+  ocr: "Reconhecer texto (OCR)",
+  "images-to-pdf": "Converter para PDF",
+  protect: "Proteger PDF",
+  unlock: "Desbloquear PDF",
+  compress: "Reduzir tamanho",
+  watermark: "Marca d’água",
+  redact: "Ocultar dados"
+};
+let dashboardRecentFilesRequestVersion = 0;
+let dashboardRecentMenuDismissBound = false;
+
+function getDashboardRecentFileActions(fileName) {
+  const extension = String(fileName || "").toLowerCase().match(/\.[^.]+$/)?.[0] || "";
+  if (extension === ".pdf") return Object.keys(DASHBOARD_RECENT_MODULES).filter((action) => action !== "images-to-pdf");
+  if ([".jpg", ".jpeg", ".png"].includes(extension)) {
+    return ["images-to-pdf", "organize", "merge", "ocr", "compress", "watermark", "redact"];
+  }
+  if ([".tif", ".tiff"].includes(extension)) return ["ocr"];
+  if ([".docx", ".xlsx"].includes(extension)) return ["images-to-pdf"];
+  return [];
+}
+
+async function refreshDashboardRecentFiles() {
+  const list = document.getElementById("dashboard-recent-files-list");
+  const status = document.getElementById("dashboard-recent-files-status");
+  const refreshButton = document.getElementById("btn-dashboard-refresh-recent-files");
+  if (!list || !status) return;
+
+  const requestVersion = ++dashboardRecentFilesRequestVersion;
+  if (refreshButton) refreshButton.disabled = true;
+  status.textContent = "Procurando arquivos recentes…";
+  list.replaceChildren();
+  try {
+    const result = await window.api?.findRecentUploadFiles?.(DASHBOARD_RECENT_FILE_EXTENSIONS);
+    if (requestVersion !== dashboardRecentFilesRequestVersion) return;
+    if (result?.success === false) throw new Error(result.error || "A busca de arquivos recentes falhou.");
+    const files = Array.isArray(result?.files) ? result.files.slice(0, 6) : [];
+    if (!files.length) {
+      status.textContent = "Nenhum arquivo compatível foi encontrado recentemente. Abra ou modifique um PDF ou documento para ele aparecer aqui.";
+      return;
+    }
+
+    status.textContent = `${files.length} arquivo${files.length === 1 ? " recente" : "s recentes"} encontrado${files.length === 1 ? "" : "s"}.`;
+    list.innerHTML = files.map((file, index) => {
+      const filePath = String(file?.path || "");
+      const name = String(file?.name || filePath.split(/[\\/]/).pop() || "Arquivo recente");
+      const location = filePath.replace(/[\\/][^\\/]*$/, "") || filePath;
+      const actions = getDashboardRecentFileActions(name);
+      const initialAction = actions[0] || "";
+      const actionOptions = actions.map((action) => `<button class="dashboard-recent-module-option" type="button" role="menuitemradio" aria-checked="${action === initialAction}" data-dashboard-recent-option="${index}" data-module-action="${action}">${escapeHtml(DASHBOARD_RECENT_MODULES[action])}</button>`).join("");
+      const modifiedAt = new Date(file?.modifiedAt);
+      const modifiedText = Number.isNaN(modifiedAt.getTime()) ? "Data indisponível" : modifiedAt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      return `<article class="dashboard-recent-file" data-dashboard-recent-index="${index}" data-selected-action="${initialAction}">
+        <span class="dashboard-recent-file-icon" data-icon="file-text" aria-hidden="true"></span>
+        <div class="dashboard-recent-file-copy">
+          <strong class="dashboard-recent-file-name" title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
+          <span class="dashboard-recent-file-location" title="${escapeHtml(filePath)}">${escapeHtml(location)}</span>
+          <span class="dashboard-recent-file-meta">${escapeHtml(formatBytes(Number(file?.size) || 0))} <span aria-hidden="true">·</span> ${escapeHtml(modifiedText)}</span>
+        </div>
+        <div class="dashboard-recent-file-actions">
+          <div class="dashboard-recent-module-picker">
+            <button class="dashboard-recent-module-trigger" type="button" data-dashboard-recent-toggle="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Escolher módulo para ${escapeHtml(name)}">
+              <span data-dashboard-recent-selected>${escapeHtml(DASHBOARD_RECENT_MODULES[initialAction] || "Escolher módulo")}</span><span data-icon="chevron-down" aria-hidden="true"></span>
+            </button>
+            <div class="dashboard-recent-module-menu hidden" role="menu" aria-label="Módulos compatíveis">${actionOptions}</div>
+          </div>
+          <button class="btn-primary btn-sm btn-icon-label" type="button" data-dashboard-recent-open="${index}" data-icon="arrow-right">Abrir</button>
+          <button class="btn-secondary btn-sm btn-icon" type="button" data-dashboard-recent-reveal="${index}" data-icon="folder-open" aria-label="Mostrar ${escapeHtml(name)} na pasta" title="Mostrar na pasta"></button>
+        </div>
+      </article>`;
+    }).join("");
+
+    list.querySelectorAll("[data-icon]").forEach((node) => {
+      node.innerHTML = lucideIcon(node.getAttribute("data-icon"), { size: 17 });
+    });
+    list.querySelectorAll("[data-dashboard-recent-toggle]").forEach((trigger) => {
+      trigger.addEventListener("click", () => {
+        const article = trigger.closest(".dashboard-recent-file");
+        const menu = article?.querySelector(".dashboard-recent-module-menu");
+        const shouldOpen = Boolean(menu?.classList.contains("hidden"));
+        list.querySelectorAll(".dashboard-recent-module-menu").forEach((item) => item.classList.add("hidden"));
+        list.querySelectorAll("[data-dashboard-recent-toggle]").forEach((item) => item.setAttribute("aria-expanded", "false"));
+        if (shouldOpen && menu) {
+          menu.classList.remove("hidden");
+          trigger.setAttribute("aria-expanded", "true");
+        }
+      });
+    });
+    list.querySelectorAll("[data-dashboard-recent-option]").forEach((option) => {
+      option.addEventListener("click", () => {
+        const article = option.closest(".dashboard-recent-file");
+        const trigger = article?.querySelector("[data-dashboard-recent-toggle]");
+        const menu = article?.querySelector(".dashboard-recent-module-menu");
+        const selectedAction = option.dataset.moduleAction || "";
+        if (!article || !trigger || !DASHBOARD_RECENT_MODULES[selectedAction]) return;
+        article.dataset.selectedAction = selectedAction;
+        trigger.querySelector("[data-dashboard-recent-selected]").textContent = DASHBOARD_RECENT_MODULES[selectedAction];
+        menu?.querySelectorAll("[data-dashboard-recent-option]").forEach((item) => {
+          item.setAttribute("aria-checked", String(item === option));
+        });
+        menu?.classList.add("hidden");
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.focus();
+      });
+    });
+    if (!dashboardRecentMenuDismissBound) {
+      document.addEventListener("click", (event) => {
+        if (event.target.closest(".dashboard-recent-module-picker")) return;
+        document.querySelectorAll(".dashboard-recent-module-menu").forEach((menu) => menu.classList.add("hidden"));
+        document.querySelectorAll("[data-dashboard-recent-toggle]").forEach((trigger) => trigger.setAttribute("aria-expanded", "false"));
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const openMenu = document.querySelector(".dashboard-recent-module-menu:not(.hidden)");
+        if (!openMenu) return;
+        const trigger = openMenu.closest(".dashboard-recent-module-picker")?.querySelector("[data-dashboard-recent-toggle]");
+        openMenu.classList.add("hidden");
+        trigger?.setAttribute("aria-expanded", "false");
+        trigger?.focus();
+      });
+      dashboardRecentMenuDismissBound = true;
+    }
+    list.querySelectorAll("[data-dashboard-recent-open]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const index = Number(button.dataset.dashboardRecentOpen);
+        const file = files[index];
+        const action = button.closest(".dashboard-recent-file")?.dataset.selectedAction;
+        if (!file || !action || !matchesDashboardAction(file, action)) {
+          notify({ tone: "warning", title: "Módulo incompatível", message: "Escolha um módulo que aceite este formato de arquivo." });
+          return;
+        }
+        button.disabled = true;
+        try {
+          const info = await window.api?.getFileInfo?.(String(file.path || ""));
+          if (!info?.success) {
+            status.textContent = "Esse arquivo não está mais disponível. Atualize a lista e tente novamente.";
+            return;
+          }
+          await routeDashboardSelectedFile(toLaunchFileLike({ path: info.path, name: info.name, size: info.size }), action);
+        } catch (error) {
+          notify({ tone: "error", title: "Não foi possível abrir o arquivo", message: error?.message || "Tente novamente." });
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+    list.querySelectorAll("[data-dashboard-recent-reveal]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const file = files[Number(button.dataset.dashboardRecentReveal)];
+        const result = await window.api?.revealPath?.(String(file?.path || ""));
+        if (!result?.success) notify({ tone: "error", title: "Localizar arquivo", message: result?.error || "Não foi possível abrir a localização." });
+      });
+    });
+  } catch (error) {
+    if (requestVersion !== dashboardRecentFilesRequestVersion) return;
+    status.textContent = error?.message || "Não foi possível buscar arquivos recentes.";
+  } finally {
+    if (requestVersion === dashboardRecentFilesRequestVersion && refreshButton) refreshButton.disabled = false;
+  }
+}
+
 async function routeDashboardSelectedFile(file, action) {
   if (!file) return;
+
+  const preflightType = getSingleFilePreflightType(action);
+  if (preflightType && !(await preflightSingleFile(file, preflightType))) return;
 
   ensureModuleSetup(action);
   switchTab(action, { skipGuard: true });
@@ -1842,8 +2009,15 @@ async function routeDashboardSelectedFile(file, action) {
     handleCompressFile(file);
   } else if (action === "watermark") {
     await watermarkWorkspace.handleFiles([file]);
+  } else if (action === "unlock") {
+    await unlockWorkspace.handleUnlockFile(file);
+  } else if (action === "ocr") {
+    await handleOcrFiles([file]);
+  } else if (action === "images-to-pdf") {
+    await imageToPdfWorkspace.addImageFiles([file]);
   }
 
+  hideRecentFilesCard(action);
   setDashboardSelectedPdfFile(null);
 }
 
@@ -1886,6 +2060,9 @@ function normalizeLaunchRequestAction(action) {
     .trim()
     .toLowerCase();
 
+  if (["open", "abrir"].includes(normalized)) return "open";
+  if (["images-to-pdf", "converter-para-pdf"].includes(normalized)) return "images-to-pdf";
+  if (["ocr", "reconhecer-texto"].includes(normalized)) return "ocr";
   if (["organize", "organizar"].includes(normalized)) return "organize";
   if (["merge", "mesclar", "juntar"].includes(normalized)) return "merge";
   if (["protect", "proteger"].includes(normalized)) return "protect";
@@ -1922,6 +2099,30 @@ async function openLaunchRequest(payload) {
   } catch (_) {}
 
   if (!action || files.length === 0) return;
+
+  if (action === "open") {
+    ensureModuleSetup("organize");
+    switchTab("organize", { skipGuard: true });
+    await organizeWorkspace.handleOrganizeFile(files[0]);
+    return;
+  }
+
+  if (action === "images-to-pdf") {
+    ensureModuleSetup(action);
+    switchTab(action, { skipGuard: true });
+    await imageToPdfWorkspace.addImageFiles(files);
+    return;
+  }
+
+  if (action === "ocr") {
+    ensureModuleSetup(action);
+    switchTab(action, { skipGuard: true });
+    await handleOcrFiles(files);
+    return;
+  }
+
+  const preflightType = getSingleFilePreflightType(action);
+  if (preflightType && !(await preflightSingleFile(files[0], preflightType))) return;
 
   ensureModuleSetup(action);
   switchTab(action, { skipGuard: true });
@@ -2085,7 +2286,6 @@ function setupDashboardEnhancements() {
   const defaultDirButton = document.getElementById("btn-dashboard-open-default-dir");
   const processedHistoryButton = document.getElementById("btn-dashboard-processed-history");
   const searchInput = document.getElementById("dashboard-search-input");
-  const searchClearButton = document.getElementById("dashboard-search-clear");
   const fileInput = document.getElementById("dashboard-pdf-input");
   const dropzone = document.getElementById("dashboard-pdf-dropzone");
   const openActionButton = document.getElementById("btn-dashboard-open-action");
@@ -2106,49 +2306,31 @@ function setupDashboardEnhancements() {
 
   if (defaultDirButton) {
     defaultDirButton.addEventListener("click", async () => {
-      const defaultDir = state.appConfig?.defaultOutputDir || "";
-      if (!defaultDir) {
+      const target = getDashboardDestinationTarget();
+      if (!target) {
         notify({
           tone: "warning",
-          title: "Pasta personalizada",
-          message: "Nenhuma pasta personalizada está cadastrada. Os arquivos são salvos na pasta de origem."
+          title: "Pasta de destino",
+          message: "Ainda não há uma pasta para abrir. Processe um arquivo ou defina uma pasta padrão nas configurações."
         });
         return;
       }
 
-      const result = await window.api.openPath(defaultDir);
+      const result = await window.api.openPath(target.path);
       if (!result?.success) {
         notify({
           tone: "error",
-          title: "Abrir pasta personalizada",
-          message: result?.error || "Não foi possível abrir a pasta personalizada de destino."
+          title: "Abrir pasta de destino",
+          message: result?.error || "Não foi possível abrir a pasta de destino."
         });
       }
     });
   }
 
   if (searchInput) {
-    applyDashboardSearch(searchInput.value);
-    searchInput.addEventListener("input", (event) => {
-      applyDashboardSearch(event.target.value);
-    });
-    searchInput.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && searchInput.value) {
-        event.preventDefault();
-        searchInput.value = "";
-        applyDashboardSearch("");
-        searchInput.focus();
-      }
-    });
-  }
-
-  if (searchClearButton) {
-    searchClearButton.addEventListener("click", () => {
-      if (!searchInput) return;
-      searchInput.value = "";
-      applyDashboardSearch("");
-      searchInput.focus();
-    });
+    const openGlobalSearch = () => commandPalette.open(searchInput.value);
+    searchInput.addEventListener("focus", openGlobalSearch);
+    searchInput.addEventListener("click", openGlobalSearch);
   }
 
   if (processedHistoryButton) {
@@ -2163,24 +2345,37 @@ function setupDashboardEnhancements() {
     });
   }
 
+  document.getElementById("btn-dashboard-refresh-recent-files")?.addEventListener("click", () => {
+    void refreshDashboardRecentFiles();
+  });
+
   if (fileInput) {
     fileInput.addEventListener("change", async (event) => {
-      const action = actionSelect?.value || "organize";
-      const [file] = [...event.target.files].filter((item) => matchesDashboardAction(item, action));
-      setDashboardSelectedPdfFile(file || null);
-      if (file && state.dashboardAutoRouteOnPick) {
-        state.dashboardAutoRouteOnPick = false;
-        await routeDashboardSelectedFile(file, action);
-      } else {
-        state.dashboardAutoRouteOnPick = false;
+      try {
+        const action = actionSelect?.value || "organize";
+        const [file] = normalizeSelectedFiles(event.target.files).filter((item) => matchesDashboardAction(item, action));
+        setDashboardSelectedPdfFile(file || null);
+        if (file && state.dashboardAutoRouteOnPick) {
+          state.dashboardAutoRouteOnPick = false;
+          await routeDashboardSelectedFile(file, action);
+        } else {
+          state.dashboardAutoRouteOnPick = false;
+        }
+      } finally {
+        fileInput.value = "";
       }
-      fileInput.value = "";
     });
   }
 
   if (dropzone && fileInput) {
     dropzone.addEventListener("click", (event) => {
       if (event.target !== fileInput) fileInput.click();
+    });
+
+    dropzone.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      fileInput.click();
     });
 
     dropzone.addEventListener("dragover", (event) => {
@@ -2196,7 +2391,7 @@ function setupDashboardEnhancements() {
       event.preventDefault();
       dropzone.classList.remove("drag-over");
       const action = actionSelect?.value || "organize";
-      const [file] = [...event.dataTransfer.files].filter((item) => matchesDashboardAction(item, action));
+      const [file] = normalizeSelectedFiles(event.dataTransfer.files).filter((item) => matchesDashboardAction(item, action));
       setDashboardSelectedPdfFile(file || null);
     });
   }
@@ -2217,6 +2412,7 @@ function setupDashboardEnhancements() {
   updateDashboardThemeButton();
   updateDashboardDefaultDirButton();
   updateDashboardSummary();
+  void refreshDashboardRecentFiles();
 }
 
 function setupNavigation() {
@@ -2224,33 +2420,102 @@ function setupNavigation() {
     tab.addEventListener("click", () => switchTab(tab.getAttribute("data-tab")));
   });
 
+  const settingsTabs = [...document.querySelectorAll("[data-settings-tab]")];
+  const settingsPanes = [...document.querySelectorAll(".settings-pane")];
+  settingsTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.getAttribute("data-settings-tab");
+      settingsTabs.forEach((item) => {
+        const isActive = item === tab;
+        item.classList.toggle("active", isActive);
+        item.setAttribute("aria-selected", String(isActive));
+        item.tabIndex = isActive ? 0 : -1;
+      });
+      settingsPanes.forEach((pane) => {
+        const isActive = pane.id === `settings-pane-${target}`;
+        pane.classList.toggle("active", isActive);
+        pane.hidden = !isActive;
+      });
+    });
+
+    tab.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      const offset = event.key === "ArrowRight" ? 1 : -1;
+      const nextIndex = (settingsTabs.indexOf(tab) + offset + settingsTabs.length) % settingsTabs.length;
+      settingsTabs[nextIndex]?.focus();
+      settingsTabs[nextIndex]?.click();
+    });
+  });
+
   document.querySelectorAll("[data-go-tab]").forEach((button) => {
     button.addEventListener("click", () => switchTab(button.getAttribute("data-go-tab")));
   });
 
   // Wire Help Tab Sub-navigation
-  document.querySelectorAll(".help-nav-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
+  const helpButtons = [...document.querySelectorAll(".help-nav-btn")];
+  const activateHelpTopic = (btn) => {
       const targetPaneId = `help-pane-${btn.getAttribute("data-help-target")}`;
-      
-      document.querySelectorAll(".help-nav-btn").forEach((b) => {
-        b.classList.remove("active");
+      helpButtons.forEach((b) => {
+        const isActive = b === btn;
+        b.classList.toggle("active", isActive);
+        b.setAttribute("aria-selected", String(isActive));
         const bName = b.getAttribute("data-icon");
         const bText = b.querySelector("span")?.textContent || b.textContent.trim();
-        b.innerHTML = `${fluentIconByState(bName, { size: 18, active: false })}<span style="margin-left: 8px;">${escapeHtml(bText)}</span>`;
+        b.innerHTML = `${lucideIconByState(bName, { size: 18, active: isActive })}<span style="margin-left: 8px;">${escapeHtml(bText)}</span>`;
       });
-      document.querySelectorAll(".help-pane").forEach((p) => p.classList.remove("active"));
-      
-      btn.classList.add("active");
-      const name = btn.getAttribute("data-icon");
-      const text = btn.querySelector("span")?.textContent || btn.textContent.trim();
-      btn.innerHTML = `${fluentIconByState(name, { size: 18, active: true })}<span style="margin-left: 8px;">${escapeHtml(text)}</span>`;
-      
-      const targetPane = document.getElementById(targetPaneId);
-      if (targetPane) {
-        targetPane.classList.add("active");
-      }
+      document.querySelectorAll(".help-pane").forEach((p) => {
+        const isActive = p.id === targetPaneId;
+        p.classList.toggle("active", isActive);
+        p.setAttribute("aria-hidden", String(!isActive));
+      });
+    };
+
+  helpButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activateHelpTopic(btn);
     });
+    btn.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const currentIndex = helpButtons.indexOf(btn);
+      const nextIndex = event.key === "Home" ? 0
+        : event.key === "End" ? helpButtons.length - 1
+          : (currentIndex + (event.key === "ArrowDown" ? 1 : -1) + helpButtons.length) % helpButtons.length;
+      helpButtons[nextIndex].focus();
+      activateHelpTopic(helpButtons[nextIndex]);
+    });
+  });
+
+  // Keep ARIA state synchronized with the initial topic.
+  const initialHelpButton = helpButtons.find((button) => button.classList.contains("active"));
+  if (initialHelpButton) {
+    activateHelpTopic(initialHelpButton);
+  }
+
+  const helpToolTargets = {
+    "images-to-pdf": "Converter para PDF",
+    merge: "Mesclar",
+    split: "Separar PDFs",
+    signature: "Assinar PDF",
+    "pdf-to-word": "PDF para Word",
+    organize: "Organizar Páginas",
+    watermark: "Marca d'água",
+    compress: "Reduzir tamanho",
+    protect: "Proteger PDF",
+    unlock: "Desbloquear PDF",
+    redact: "Ocultar Dados",
+    ocr: "Reconhecer texto (OCR)"
+  };
+  Object.entries(helpToolTargets).forEach(([target, label]) => {
+    const pane = document.getElementById(`help-pane-${target}`);
+    if (!pane || pane.querySelector(".help-open-tool")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "help-open-tool btn-secondary btn-sm btn-icon-label";
+    button.innerHTML = `${lucideIcon("external-link", { size: 16 })}<span>Abrir ${escapeHtml(label)}</span>`;
+    button.addEventListener("click", () => switchTab(target));
+    pane.querySelector("p")?.after(button);
   });
 
   bindClick("btn-sidebar-close-app", () => {
@@ -2361,39 +2626,80 @@ function showCustomConfirmModal(title, message, onConfirm, onCancel, options = {
   }, 0);
 }
 
-function switchTab(tabId, options = {}) {
-  if (!tabId || tabId === state.activeTab) return;
-  const { skipGuard = false } = options;
-  const previousTab = state.activeTab;
+function showCustomPromptModal(title, message, options = {}) {
+  const modal = document.getElementById("custom-prompt-modal");
+  const titleEl = document.getElementById("custom-prompt-title");
+  const messageEl = document.getElementById("custom-prompt-message");
+  const input = document.getElementById("custom-prompt-input");
+  const confirmButton = document.getElementById("custom-prompt-btn-ok");
+  const cancelButton = document.getElementById("custom-prompt-btn-cancel");
+  if (!modal || !input || !confirmButton || !cancelButton) return Promise.resolve("");
 
-  const pendingMessage = skipGuard ? "" : getPendingTabMessage(previousTab, state, {
-    getWatermarkPendingMessage: () => watermarkWorkspace.getPendingMessage(),
-    getImagePendingMessage: () => imageToPdfWorkspace.getPendingMessage(),
-    getSignaturePendingMessage: () => signatureWorkspace.getPendingMessage(),
-    getPdfToWordPendingMessage: () => pdfToWordWorkspace.getPendingMessage(),
-    getProtectPendingMessage: () => protectWorkspace.getPendingMessage(),
-    getUnlockPendingMessage: () => unlockWorkspace.getPendingMessage(),
-    getRedactPendingMessage: () => redactWorkspace.getPendingMessage()
-  });
+  const previousFocus = document.activeElement;
+  if (titleEl) titleEl.textContent = title;
+  if (messageEl) messageEl.textContent = message;
+  input.value = options.initialValue || "";
+  input.placeholder = options.placeholder || "Digite um nome";
+  confirmButton.textContent = options.confirmLabel || "Salvar";
+  cancelButton.textContent = options.cancelLabel || "Cancelar";
+  modal.classList.remove("hidden");
 
-  if (pendingMessage) {
-    showCustomConfirmModal(
-      "Aviso",
-      `${pendingMessage}\n\nDeseja realmente sair desta tela?`,
-      () => {
-        switchTab(tabId, { skipGuard: true });
+  return new Promise((resolve) => {
+    const close = (value = "") => {
+      modal.classList.add("hidden");
+      confirmButton.removeEventListener("click", confirm);
+      cancelButton.removeEventListener("click", cancel);
+      modal.removeEventListener("click", onBackdrop);
+      modal.removeEventListener("keydown", onKeydown);
+      if (previousFocus && typeof previousFocus.focus === "function") {
+        previousFocus.focus({ preventScroll: true });
       }
-    );
-    return;
-  }
+      resolve(value);
+    };
+    const confirm = () => close(input.value.trim());
+    const cancel = () => close("");
+    const onBackdrop = (event) => {
+      if (event.target === modal) cancel();
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        confirm();
+      }
+    };
 
-  clearPreviousTabState(previousTab);
+    confirmButton.addEventListener("click", confirm);
+    cancelButton.addEventListener("click", cancel);
+    modal.addEventListener("click", onBackdrop);
+    modal.addEventListener("keydown", onKeydown);
+    window.setTimeout(() => {
+      input.focus({ preventScroll: true });
+      input.select();
+    }, 0);
+  });
+}
+
+function switchTab(tabId) {
+  if (!tabId || tabId === state.activeTab) return;
+
+  // Trocar de função é apenas navegação. O workspace anterior continua em
+  // memória para que o usuário possa voltar e concluir o trabalho depois.
+  // A limpeza acontece somente pelos botões explícitos de limpar, após uma
+  // conclusão controlada ou no encerramento do app.
   ensureModuleSetup(tabId);
 
   state.activeTab = tabId;
   dom.tabs.forEach((tab) => tab.classList.toggle("active", tab.getAttribute("data-tab") === tabId));
   dom.tabs.forEach(renderNavItemIcon);
-  dom.tabContents.forEach((content) => content.classList.toggle("active", content.id === `tab-${tabId}`));
+  const targetContentId = `tab-${tabId}`;
+  dom.tabContents.forEach((content) => {
+    content.classList.toggle("active", content.id === targetContentId);
+  });
+
+  refreshRecentFilesCards?.(tabId);
 
   if (tabId === "dashboard") {
     queueAndHistory.renderHistory();
@@ -2402,9 +2708,6 @@ function switchTab(tabId, options = {}) {
   updateDashboardGreeting();
   repairVisibleMojibake(document.getElementById(`tab-${tabId}`) || document.body);
 
-  if (dom.searchInput) {
-    applyDashboardSearch(dom.searchInput.value);
-  }
 }
 
 function clearPreviousTabState(tab) {
@@ -2416,6 +2719,19 @@ function clearPreviousTabState(tab) {
     imageToPdfWorkspace.clearWorkspace();
   } else if (tab === "pdf-to-word") {
     pdfToWordWorkspace.clearWorkspace();
+  } else if (tab === "ocr") {
+    state.ocrFiles = [];
+    state.ocrRuntime = null;
+    document.getElementById("ocr-file-list")?.replaceChildren();
+    const subtitle = document.getElementById("ocr-files-subtitle");
+    if (subtitle) subtitle.textContent = "Adicione mais documentos ou limpe a seleção.";
+    clearOcrImagePreview();
+    const runtimeWarning = document.getElementById("ocr-runtime-warning");
+    if (runtimeWarning) {
+      runtimeWarning.textContent = "";
+      runtimeWarning.classList.add("hidden");
+    }
+    ocrAreaExtractor.setFiles([]);
   } else if (tab === "protect") {
     protectWorkspace.clearWorkspace();
   } else if (tab === "unlock") {
@@ -2428,6 +2744,7 @@ function clearPreviousTabState(tab) {
     state.mergeFiles = [];
     renderMergeFileList();
   } else if (tab === "split") {
+    cancelSplitContentSearch();
     state.selectedSplitFile = null;
     document.getElementById("split-settings-container").classList.add("hidden");
     document.getElementById("split-dropzone").classList.remove("hidden");
@@ -2496,15 +2813,26 @@ function updateRecentHistoryFromTask(task, status) {
 }
 
 function setupDropzones() {
-  [
+  if (!document.documentElement.dataset.filePathBridgeReady) {
+    document.documentElement.dataset.filePathBridgeReady = "true";
+    document.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target?.tagName === "INPUT" && target.type === "file") {
+        normalizeSelectedFiles(target.files);
+      }
+    }, true);
+  }
+
+  const uploadTools = [
     { id: "images-pdf-dropzone", inputId: "images-pdf-input", handler: imageToPdfWorkspace.addImageFiles, filter: (file) => /\.(jpg|jpeg|png|docx|xlsx)$/i.test(file.name) },
-    { id: "signature-dropzone", inputId: "signature-file-input", handler: (files) => signatureWorkspace.handleSignatureFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
-    { id: "pdf-to-word-dropzone", inputId: "pdf-to-word-file-input", handler: (files) => pdfToWordWorkspace.handleFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
+    { id: "signature-dropzone", inputId: "signature-file-input", handler: (files) => signatureWorkspace.handleSignatureFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf" },
+    { id: "pdf-to-word-dropzone", inputId: "pdf-to-word-file-input", handler: (files) => pdfToWordWorkspace.handleFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf" },
+    { id: "ocr-dropzone", inputId: "ocr-file-input", handler: handleOcrFiles, filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png|tif|tiff)$/i.test(file.name) },
     { id: "merge-dropzone", inputId: "merge-file-input", handler: handleMergeFiles, filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png)$/i.test(file.name) },
-    { id: "split-dropzone", inputId: "split-file-input", handler: (files) => handleSplitFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
+    { id: "split-dropzone", inputId: "split-file-input", handler: (files) => handleSplitFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf" },
     { id: "organize-dropzone", inputId: "organize-file-input", handler: async (files) => {
       if (!files || files.length === 0) return;
-      const shouldAppend = state.organizePages.length > 0 || state.organizeFile || state.organizeFiles?.length > 0;
+      const shouldAppend = state.organizePages.length > 0 || state.organizeFiles.length > 0;
       if (!shouldAppend) {
         await organizeWorkspace.handleOrganizeFile(files[0]);
         if (files.length > 1) {
@@ -2515,30 +2843,359 @@ function setupDropzones() {
       await organizeWorkspace.addOrganizeFiles(files);
     }, filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png)$/i.test(file.name) },
     { id: "watermark-dropzone", inputId: "watermark-file-input", handler: watermarkWorkspace.handleFiles, filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png)$/i.test(file.name) },
-    { id: "compress-dropzone", inputId: "compress-file-input", handler: (files) => handleCompressFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
-    { id: "protect-dropzone", inputId: "protect-file-input", handler: (files) => protectWorkspace.handleProtectFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
-    { id: "unlock-dropzone", inputId: "unlock-file-input", handler: (files) => unlockWorkspace.handleUnlockFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") },
-    { id: "redact-dropzone", inputId: "redact-file-input", handler: (files) => redactWorkspace.handleRedactFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png)$/i.test(file.name) }
-  ].forEach(setupDropzone);
+    { id: "compress-dropzone", inputId: "compress-file-input", handler: (files) => handleCompressFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf" },
+    { id: "protect-dropzone", inputId: "protect-file-input", handler: (files) => protectWorkspace.handleProtectFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf" },
+    { id: "unlock-dropzone", inputId: "unlock-file-input", handler: (files) => unlockWorkspace.handleUnlockFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf"), preflightType: "single-pdf-unlock" },
+    { id: "redact-dropzone", inputId: "redact-file-input", handler: (files) => redactWorkspace.handleRedactFile(files[0]), filter: (file) => file.name.toLowerCase().endsWith(".pdf") || /\.(jpg|jpeg|png)$/i.test(file.name), preflightType: "single-pdf-or-image" }
+  ];
+  uploadTools.forEach(setupDropzone);
+  refreshRecentFilesCards = setupRecentFilesCards(uploadTools);
 }
 
-function setupDropzone({ id, inputId, handler, filter }) {
+function setupRecentFilesCards(uploadTools) {
+  const extensionsByTab = {
+    // Converter arquivos para PDF aceita imagens comuns, DOCX e XLSX.
+    // Filtrar aqui evita que arquivos sem suporte apareçam nos atalhos recentes.
+    "images-to-pdf": [".jpg", ".jpeg", ".png", ".docx", ".xlsx"],
+    merge: [".pdf", ".jpg", ".jpeg", ".png"],
+    signature: [".pdf"],
+    ocr: [".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"],
+    "pdf-to-word": [".pdf"],
+    split: [".pdf"],
+    organize: [".pdf", ".jpg", ".jpeg", ".png"],
+    watermark: [".pdf", ".jpg", ".jpeg", ".png"],
+    compress: [".pdf", ".jpg", ".jpeg", ".png"],
+    protect: [".pdf"],
+    unlock: [".pdf"],
+    redact: [".pdf", ".jpg", ".jpeg", ".png"]
+  };
+  const cards = new Map();
+  const requestVersions = new Map();
+
+  uploadTools.forEach(({ id }) => {
+    const dropzone = document.getElementById(id);
+    if (!dropzone) return;
+    const tabId = dropzone.closest(".tab-content")?.id?.replace(/^tab-/, "");
+    const card = document.createElement("section");
+    card.className = "card recent-inputs-card hidden";
+    card.setAttribute("aria-label", "Arquivos modificados recentemente");
+    dropzone.insertAdjacentElement("afterend", card);
+    cards.set(tabId, card);
+    let wasDropzoneHidden = dropzone.classList.contains("hidden");
+    new MutationObserver(() => {
+      const isDropzoneHidden = dropzone.classList.contains("hidden");
+      if (isDropzoneHidden === wasDropzoneHidden) return;
+      wasDropzoneHidden = isDropzoneHidden;
+      if (isDropzoneHidden) hideRecentFilesCard(tabId);
+      else if (tabId === state.activeTab) refreshRecentFilesCards?.(tabId);
+    }).observe(dropzone, { attributes: true, attributeFilter: ["class"] });
+  });
+
+  const hide = (tabId) => {
+    const card = cards.get(tabId);
+    if (!card) return;
+    requestVersions.set(tabId, (requestVersions.get(tabId) || 0) + 1);
+    card.classList.add("hidden");
+  };
+  hideRecentFilesCard = hide;
+
+  const render = async (tabId) => {
+    const card = cards.get(tabId);
+    const accepts = extensionsByTab[tabId];
+    const dropzone = document.getElementById(`tab-${tabId}`)?.querySelector(".file-upload-area");
+    if (!card || !accepts || !dropzone || tabId !== state.activeTab || dropzone.classList.contains("hidden")) {
+      hide(tabId);
+      return;
+    }
+
+    const requestVersion = (requestVersions.get(tabId) || 0) + 1;
+    requestVersions.set(tabId, requestVersion);
+    card.classList.add("hidden");
+    let result;
+    try {
+      result = await window.api?.findRecentUploadFiles?.(accepts);
+    } catch (error) {
+      console.warn("Não foi possível localizar arquivos recentes para upload.", error);
+      return;
+    }
+    if (requestVersions.get(tabId) !== requestVersion || tabId !== state.activeTab || dropzone.classList.contains("hidden")) return;
+
+    const entries = Array.isArray(result?.files) ? result.files : [];
+    if (entries.length === 0) {
+      card.replaceChildren();
+      return;
+    }
+
+    const isBatchTab = ["ocr", "merge", "images-to-pdf", "organize"].includes(tabId);
+
+    const formatAge = (value) => {
+      const modifiedAt = new Date(value);
+      const diffMs = Math.max(0, Date.now() - modifiedAt.getTime());
+      const diffHours = Math.floor(diffMs / 3600000);
+      const ageInDays = Math.floor(diffMs / 86400000);
+      let ageLabel = "";
+      if (diffHours < 1) ageLabel = "Agora há pouco";
+      else if (diffHours < 24) ageLabel = `Hoje, ${modifiedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      else if (ageInDays === 1) ageLabel = "Ontem";
+      else ageLabel = `Há ${ageInDays} dias`;
+      return { ageLabel, fullDate: modifiedAt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) };
+    };
+
+    card.innerHTML = `
+      <div class="section-heading compact recent-heading-row">
+        <div>
+          <h2 class="section-title-with-icon"><span class="section-title-icon" data-icon="history"></span><span>Arquivos modificados recentemente</span></h2>
+          <p>Arquivos existentes no computador, alterados ou abertos recentemente.</p>
+        </div>
+        ${isBatchTab && entries.length > 1 ? `
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-recent-add-all-${tabId}" data-icon="plus">
+            <span data-icon="plus"></span>Adicionar todos ao lote (${entries.length})
+          </button>
+        ` : ""}
+      </div>
+      <div class="recent-inputs-list">${entries.map((item, index) => {
+        const name = String(item?.name || item?.path?.split(/[\\/]/).pop() || "Arquivo recente");
+        const { ageLabel, fullDate } = formatAge(item?.modifiedAt);
+        return `<button type="button" class="recent-input-item" data-recent-input-index="${index}" title="Modificado em ${escapeHtml(fullDate)}"><span data-icon="file-text"></span><span class="recent-input-copy"><span class="recent-input-name">${escapeHtml(name)}</span><span class="recent-input-meta">${escapeHtml(ageLabel)}</span></span><span class="recent-input-action" data-recent-action-label>${isBatchTab ? "+ Adicionar ao lote" : "Usar arquivo"}</span></button>`;
+      }).join("")}</div>`;
+    card.classList.remove("hidden");
+
+    card.querySelectorAll("[data-icon]").forEach((node) => {
+      node.innerHTML = lucideIcon(node.getAttribute("data-icon"), { size: 18 });
+    });
+
+    const addAllBtn = card.querySelector(`#btn-recent-add-all-${tabId}`);
+    if (addAllBtn) {
+      addAllBtn.addEventListener("click", async () => {
+        addAllBtn.disabled = true;
+        const filesToAdd = [];
+        for (const item of entries) {
+          const filePath = String(item?.path || "");
+          const fileName = String(item?.name || filePath.split(/[\\/]/).pop() || "");
+          if (!accepts.some((extension) => fileName.toLowerCase().endsWith(extension))) continue;
+          let info = null;
+          try {
+            info = filePath ? await window.api?.getFileInfo?.(filePath) : null;
+          } catch (_) {}
+          if (info?.success) {
+            const file = toLaunchFileLike({ path: filePath, name: info.name, size: info.size });
+            if (file) filesToAdd.push(file);
+          }
+        }
+        if (!filesToAdd.length) {
+          notify({ tone: "info", title: "Arquivos recentes", message: "Nenhum arquivo recente está disponível para carregar." });
+          return;
+        }
+        card.querySelectorAll("[data-recent-action-label]").forEach((lbl) => {
+          lbl.textContent = "✓ Adicionado";
+          lbl.classList.add("text-success");
+        });
+        card.querySelectorAll("[data-recent-input-index]").forEach((btn) => {
+          btn.disabled = true;
+        });
+        if (tabId === "ocr") {
+          await handleOcrFiles(filesToAdd);
+        } else if (tabId === "merge") {
+          handleMergeFiles(filesToAdd);
+        } else if (tabId === "images-to-pdf") {
+          await imageToPdfWorkspace.addImageFiles(filesToAdd);
+        } else if (tabId === "organize") {
+          await organizeWorkspace.addOrganizeFiles(filesToAdd);
+        }
+        notify({ tone: "success", title: "Lote atualizado", message: `${filesToAdd.length} arquivo(s) adicionado(s) com sucesso ao lote.` });
+      });
+    }
+
+    card.querySelectorAll("[data-recent-input-index]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const item = entries[Number(button.dataset.recentInputIndex)];
+        const filePath = String(item?.path || "");
+        const fileName = String(item?.name || filePath.split(/[\\/]/).pop() || "");
+        if (!accepts.some((extension) => fileName.toLowerCase().endsWith(extension))) {
+          notify({ tone: "warning", title: "Formato não compatível", message: "Escolha JPG, JPEG, PNG, DOCX ou XLSX para converter em PDF." });
+          button.disabled = false;
+          return;
+        }
+        let info = null;
+        try {
+          info = filePath ? await window.api?.getFileInfo?.(filePath) : null;
+        } catch (_) {}
+        if (!info?.success) {
+          notify({ tone: "info", title: "Arquivo não está mais disponível", message: "Atualizei a lista de arquivos recentes. Escolha outro arquivo para continuar." });
+          hide(tabId);
+          void render(tabId);
+          return;
+        }
+
+        const file = toLaunchFileLike({ path: filePath, name: info.name, size: info.size });
+        if (!file) return;
+
+        if (isBatchTab) {
+          const actionLabel = button.querySelector("[data-recent-action-label]");
+          if (actionLabel) {
+            actionLabel.textContent = "✓ Adicionado";
+            actionLabel.classList.add("text-success");
+          }
+          if (tabId === "ocr") {
+            await handleOcrFiles([file]);
+          } else if (tabId === "merge") {
+            handleMergeFiles([file]);
+          } else if (tabId === "images-to-pdf") {
+            await imageToPdfWorkspace.addImageFiles([file]);
+          } else if (tabId === "organize") {
+            await organizeWorkspace.addOrganizeFiles([file]);
+          }
+        } else {
+          hide(tabId);
+          const action = tabId === "pdf-to-word" ? "pdf-to-word" : tabId;
+          try {
+            await routeDashboardSelectedFile(file, action);
+          } catch (error) {
+            notify({ tone: "error", title: "Arquivo recente", message: error?.message || "Não foi possível carregar este arquivo." });
+            void render(tabId);
+          }
+        }
+      });
+    });
+  };
+  return (tabId) => { void render(tabId); };
+}
+
+function normalizeSelectedFile(file) {
+  if (!file) return file;
+
+  const currentPath = typeof file.path === "string" ? file.path.trim() : "";
+  const localPath = currentPath || window.api?.getPathForFile?.(file) || "";
+  if (!localPath || currentPath === localPath) return file;
+
+  try {
+    Object.defineProperty(file, "path", {
+      value: localPath,
+      configurable: true,
+      enumerable: true
+    });
+  } catch (_) {
+    try {
+      file.path = localPath;
+    } catch (_) {}
+  }
+
+  return file;
+}
+
+function normalizeSelectedFiles(fileList) {
+  return [...(fileList || [])].map(normalizeSelectedFile).filter(Boolean);
+}
+
+async function processDropzoneSelection({ id, handler, filter, preflightType }, rawFiles) {
+  const normalizedFiles = normalizeSelectedFiles(rawFiles);
+  const files = normalizedFiles.filter(filter);
+  const rejectedFiles = normalizedFiles.filter((file) => !filter(file));
+  if (rejectedFiles.length > 0) {
+    const names = rejectedFiles.slice(0, 3).map((file) => file.name).join(", ");
+    notify({
+      tone: "warning",
+      title: "Arquivos não compatíveis",
+      message: `${rejectedFiles.length} arquivo(s) não foram adicionados.`,
+      detail: `${names}${rejectedFiles.length > 3 ? ` e mais ${rejectedFiles.length - 3}` : ""}`
+    });
+  }
+  if (files.length === 0) return;
+  const selectedFiles = preflightType && files.length > 1 ? files.slice(0, 1) : files;
+  if (preflightType && files.length > 1) {
+    notify({
+      tone: "info",
+      title: "Apenas um arquivo será usado",
+      message: `${files.length - 1} arquivo(s) extra(s) não foram adicionados neste módulo.`,
+      detail: "Este módulo trabalha com um arquivo por vez."
+    });
+  }
+
+  if (preflightType && window.api?.preflightBatchFiles) {
+    if (!(await preflightSingleFile(selectedFiles[0], preflightType))) return;
+  } else if (preflightType) {
+    notify({
+      tone: "error",
+      title: "Verificação indisponível",
+      message: "Não foi possível confirmar o arquivo neste momento.",
+      detail: "Reabra o aplicativo antes de tentar novamente.",
+      important: true
+    });
+    return;
+  }
+  const tabId = document.getElementById(id)?.closest(".tab-content")?.id?.replace(/^tab-/, "");
+  if (tabId) hideRecentFilesCard(tabId);
+  await handler(selectedFiles);
+}
+
+function getSingleFilePreflightType(action) {
+  if (["signature", "pdf-to-word", "split", "protect"].includes(action)) return "single-pdf";
+  if (action === "unlock") return "single-pdf-unlock";
+  if (["redact", "compress"].includes(action)) return "single-pdf-or-image";
+  return "";
+}
+
+async function preflightSingleFile(file, type) {
+  if (!file || !type || !window.api?.preflightBatchFiles) {
+    notify({ tone: "error", title: "Verificação indisponível", message: "Não foi possível confirmar o arquivo neste momento.", detail: "Reabra o aplicativo antes de tentar novamente.", important: true });
+    return false;
+  }
+  const result = await window.api.preflightBatchFiles({ type, files: [file.path || ""] });
+  const validation = result?.results?.[0];
+  if (!validation || validation.status !== "valid") {
+    notify({
+      tone: validation?.status === "protected" ? "warning" : "error",
+      title: "Arquivo não adicionado",
+      message: validation?.status === "protected" ? "Este arquivo está protegido por senha." : "Este arquivo não passou na verificação.",
+      detail: `${validation?.name || file.name}: ${validation?.message || "Não foi possível confirmar o conteúdo."}`,
+      important: true
+    });
+    return false;
+  }
+  notify({ tone: "success", title: "Arquivo adicionado", message: `${validation.name || file.name} foi verificado e está pronto.` });
+  return true;
+}
+
+function setupDropzone({ id, inputId, handler, filter, preflightType }) {
   const dropzone = document.getElementById(id);
   const input = document.getElementById(inputId);
   if (!dropzone || !input) return;
+
+  dropzone.setAttribute("role", "button");
+  dropzone.setAttribute("tabindex", "0");
+  const promptTitle = dropzone.querySelector(".dropzone-prompt h3")?.textContent?.trim();
+  if (promptTitle && !dropzone.hasAttribute("aria-label")) {
+    dropzone.setAttribute("aria-label", promptTitle);
+  }
+  input.setAttribute("tabindex", "-1");
+  input.setAttribute("aria-hidden", "true");
+  input.dataset.dropzoneReady = "true";
 
   dropzone.addEventListener("click", (event) => {
     if (event.target !== input) input.click();
   });
 
-  input.addEventListener("change", (event) => {
-    const files = [...event.target.files].filter(filter);
-    if (files.length > 0) {
-      Promise.resolve(handler(files)).catch((error) => {
-        console.error(`Dropzone handler failed for ${id}:`, error);
+  dropzone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    input.click();
+  });
+
+  input.addEventListener("change", async (event) => {
+    try {
+      await processDropzoneSelection({ id, handler, filter, preflightType }, event.target.files);
+    } catch (error) {
+      console.error(`Dropzone handler failed for ${id}:`, error);
+      notify({
+        tone: "error",
+        title: "Arquivo não carregado",
+        message: error?.message || "Não foi possível abrir o arquivo selecionado.",
+        important: true
       });
+    } finally {
+      input.value = "";
     }
-    input.value = "";
   });
 
   dropzone.addEventListener("dragover", (event) => {
@@ -2553,8 +3210,15 @@ function setupDropzone({ id, inputId, handler, filter }) {
   dropzone.addEventListener("drop", (event) => {
     event.preventDefault();
     dropzone.classList.remove("drag-over");
-    const files = [...event.dataTransfer.files].filter(filter);
-    if (files.length > 0) handler(files);
+    processDropzoneSelection({ id, handler, filter, preflightType }, event.dataTransfer.files).catch((error) => {
+        console.error(`Dropzone handler failed for ${id}:`, error);
+        notify({
+          tone: "error",
+          title: "Arquivo não carregado",
+          message: error?.message || "Não foi possível abrir o arquivo selecionado.",
+          important: true
+        });
+    });
   });
 }
 
@@ -2577,6 +3241,18 @@ function buildFileListItem(file, index, options = {}) {
   const typeBadge = options.badgeLabel
     ? `<span class="toolbar-chip" style="margin-left: 8px; font-size: 0.72rem; padding: 3px 8px;">${escapeHtml(options.badgeLabel)}</span>`
     : "";
+  const validationStatus = file.validationStatus || "pending";
+  const validationLabels = { pending: "Verificando…", valid: "Pronto", protected: "Protegido", invalid: "Com problema" };
+  const validationBadge = (options.allowReorder || options.showValidationStatus)
+    ? `<span class="file-validation-status file-validation-${validationStatus}" title="${escapeHtml(file.validationMessage || '')}">${validationLabels[validationStatus] || validationLabels.pending}</span>`
+    : "";
+  const rotationControls = options.showRotate
+    ? `
+      <button class="btn-secondary btn-sm btn-icon rotate-left-icon" data-merge-rotate-left="${index}" title="Girar esta imagem 90 graus para a esquerda" aria-label="Girar ${escapeHtml(file.name)} para a esquerda">${icon("rotate-cw")}</button>
+      <span class="toolbar-chip" aria-label="Rotação da imagem">${Number(file.rotation) || 0}°</span>
+      <button class="btn-secondary btn-sm btn-icon" data-merge-rotate-right="${index}" title="Girar esta imagem 90 graus para a direita" aria-label="Girar ${escapeHtml(file.name)} para a direita">${icon("rotate-cw")}</button>
+    `
+    : "";
 
   const activeClass = options.isActive ? "active" : "";
   return `
@@ -2587,12 +3263,13 @@ function buildFileListItem(file, index, options = {}) {
           <div class="selected-file-meta">
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
               <span class="action-file-name" title="${escapeHtml(file.path || file.name)}">${escapeHtml(file.name)}</span>
-              ${typeBadge}
+              ${typeBadge}${validationBadge}
             </div>
             <span class="action-file-size">${escapeHtml(formatBytes(file.size))}</span>
           </div>
         </div>
         <div class="action-file-controls">
+          ${rotationControls}
           ${moveControls}
           <button class="btn-danger-text btn-sm" data-remove="${index}" title="Remover este arquivo da lista">${icon("remove")}</button>
         </div>
@@ -2602,21 +3279,126 @@ function buildFileListItem(file, index, options = {}) {
   `;
 }
 
-function handleMergeFiles(files) {
+const MERGE_LARGE_BATCH_THRESHOLD = 32;
+const MERGE_RENDER_CHUNK_SIZE = 12;
+let mergeRenderRequestId = 0;
+
+function yieldToRenderer() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const values = Array.isArray(items) ? items : [];
+  const results = new Array(values.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, Number(concurrency) || 1), values.length || 1);
+
+  async function worker() {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function handleMergeFiles(files) {
+  const existingKeys = new Set(state.mergeFiles.map((existing) => (
+    existing.path || `${existing.name || "file"}:${existing.size || 0}`
+  )));
   files.forEach((file) => {
     const fileKey = file?.path || `${file?.name || "file"}:${file?.size || 0}`;
     if (!fileKey) return;
-    if (state.mergeFiles.some((existing) => (existing.path || `${existing.name || "file"}:${existing.size || 0}`) === fileKey)) return;
+    if (existingKeys.has(fileKey)) return;
+    existingKeys.add(fileKey);
     const kind = /\.(jpg|jpeg|png)$/i.test(file.name) ? "image" : "pdf";
     state.mergeFiles.push({
       name: file.name,
       size: file.size,
       path: file.path || "",
       fileObject: file,
-      kind
+      kind,
+      rotation: 0,
+      validationStatus: "pending",
+      validationMessage: "Verificando arquivo…"
     });
   });
-  renderMergeFileList();
+  await renderMergeFileList();
+  const entries = state.mergeFiles.filter((item) => item.validationStatus === "pending");
+  if (entries.length === 0) return;
+  if (!window.api?.preflightBatchFiles) {
+    entries.forEach((entry) => {
+      entry.validationStatus = "invalid";
+      entry.validationMessage = "Não foi possível verificar este arquivo.";
+    });
+    await renderMergeFileList();
+    notify({
+      tone: "error",
+      title: "Verificação dos arquivos",
+      message: "Não foi possível confirmar os arquivos adicionados.",
+      detail: "Recarregue o aplicativo e tente adicionar os arquivos novamente.",
+      important: true
+    });
+    return;
+  }
+  try {
+    const result = await window.api.preflightBatchFiles({ type: "merge", files: entries.map((item) => item.path) });
+    const byPath = new Map((result?.results || []).map((item) => [item.path, item]));
+    entries.forEach((entry) => {
+      const status = byPath.get(entry.path);
+      if (status) {
+        entry.validationStatus = status.status;
+        entry.validationMessage = status.message;
+      }
+    });
+    const invalidEntries = entries.filter((entry) => entry.validationStatus === "invalid");
+    const protectedEntries = entries.filter((entry) => entry.validationStatus === "protected");
+    const validEntries = entries.filter((entry) => entry.validationStatus === "valid");
+    if (invalidEntries.length > 0 || protectedEntries.length > 0) {
+      const problemEntries = [...invalidEntries, ...protectedEntries];
+      const details = problemEntries.slice(0, 3)
+        .map((entry) => `${entry.name}: ${entry.validationMessage}`)
+        .join(" • ");
+      const remaining = problemEntries.length - Math.min(3, problemEntries.length);
+      notify({
+        id: `merge-upload-warning-${problemEntries.map((entry) => entry.path).join("|")}`,
+        tone: "warning",
+        title: "Arquivos adicionados com atenção",
+        message: `${validEntries.length} arquivo(s) pronto(s); ${problemEntries.length} arquivo(s) não poderão ser mesclado(s).`,
+        detail: `${details}${remaining > 0 ? ` • e mais ${remaining} arquivo(s)` : ""}`,
+        important: true
+      });
+    } else {
+      notify({
+        id: `merge-upload-success-${entries.map((entry) => entry.path).join("|")}`,
+        tone: "success",
+        title: "Arquivos adicionados",
+        message: `${validEntries.length} arquivo(s) verificado(s) e pronto(s) para mesclagem.`
+      });
+    }
+  } catch (_) {
+    entries.forEach((entry) => {
+      entry.validationStatus = "invalid";
+      entry.validationMessage = "Não foi possível verificar este arquivo.";
+    });
+    notify({
+      tone: "error",
+      title: "Falha na verificação",
+      message: "Os arquivos foram adicionados, mas não foi possível confirmar a integridade deles.",
+      detail: "Revise os itens marcados antes de tentar mesclar.",
+      important: true
+    });
+  }
+  await renderMergeFileList();
 }
 
 function getMergeFileKindLabel(kind) {
@@ -2628,8 +3410,11 @@ function buildMergeSmartSummary() {
   const summary = document.getElementById("merge-smart-summary");
   if (!summary) return;
 
-  const pdfCount = state.mergeFiles.filter((file) => file.kind !== "image").length;
-  const imageCount = state.mergeFiles.filter((file) => file.kind === "image").length;
+  const validFiles = state.mergeFiles.filter((file) => file.validationStatus === "valid");
+  const pendingCount = state.mergeFiles.filter((file) => file.validationStatus === "pending").length;
+  const problemCount = state.mergeFiles.filter((file) => ["invalid", "protected"].includes(file.validationStatus)).length;
+  const pdfCount = validFiles.filter((file) => file.kind !== "image").length;
+  const imageCount = validFiles.filter((file) => file.kind === "image").length;
   const totalCount = state.mergeFiles.length;
 
   if (totalCount === 0) {
@@ -2639,21 +3424,31 @@ function buildMergeSmartSummary() {
   }
 
   summary.style.display = "block";
+  const largeBatchHint = totalCount >= MERGE_LARGE_BATCH_THRESHOLD
+    ? " A interface será carregada em blocos para permanecer responsiva."
+    : "";
+  const statusSuffix = pendingCount > 0
+    ? ` Verificando ${pendingCount} arquivo(s)…`
+    : problemCount > 0
+      ? ` ${problemCount} arquivo(s) com problema ficam fora da mesclagem.`
+      : "";
   if (imageCount > 0 && pdfCount > 0) {
-    summary.textContent = `${pdfCount} PDF${pdfCount > 1 ? "s" : ""} + ${imageCount} imagem${imageCount > 1 ? "s" : ""} serão mesclados em um único PDF. Imagens serão convertidas localmente antes da mesclagem.`;
+    summary.textContent = `${pdfCount} PDF${pdfCount > 1 ? "s" : ""} + ${imageCount} imagem${imageCount > 1 ? "s" : ""} prontos para mesclagem. Imagens serão convertidas localmente antes da mesclagem.${statusSuffix}${largeBatchHint}`;
   } else if (imageCount > 0) {
-    summary.textContent = `${imageCount} imagem${imageCount > 1 ? "s" : ""} serão convertidas localmente e juntadas em um único PDF.`;
+    summary.textContent = `${imageCount} imagem${imageCount > 1 ? "s" : ""} pronta${imageCount > 1 ? "s" : ""} para conversão e mesclagem.${statusSuffix}${largeBatchHint}`;
   } else {
-    summary.textContent = `${pdfCount} PDF${pdfCount > 1 ? "s" : ""} pronto${pdfCount > 1 ? "s" : ""} para mesclagem.`;
+    summary.textContent = `${pdfCount} PDF${pdfCount > 1 ? "s" : ""} pronto${pdfCount > 1 ? "s" : ""} para mesclagem.${statusSuffix}${largeBatchHint}`;
   }
 }
 
-function renderMergeFileList() {
+async function renderMergeFileList() {
   const container = document.getElementById("merge-file-list-container");
   const list = document.getElementById("merge-file-list");
   const dropzone = document.getElementById("merge-dropzone");
 
   if (state.mergeFiles.length === 0) {
+    mergeRenderRequestId += 1;
+    list.innerHTML = "";
     container.classList.add("hidden");
     dropzone.classList.remove("hidden");
     return;
@@ -2662,46 +3457,50 @@ function renderMergeFileList() {
   dropzone.classList.add("hidden");
   container.classList.remove("hidden");
   buildMergeSmartSummary();
-  list.innerHTML = state.mergeFiles
-    .map((file, index) => buildFileListItem(file, index, { 
-      allowReorder: true, 
-      total: state.mergeFiles.length,
-      showRangeInput: file.kind !== "image",
-      badgeLabel: getMergeFileKindLabel(file.kind)
-    }))
-    .join("");
+  const requestId = ++mergeRenderRequestId;
+  list.innerHTML = "";
+  for (let start = 0; start < state.mergeFiles.length; start += MERGE_RENDER_CHUNK_SIZE) {
+    if (requestId !== mergeRenderRequestId) return;
+    const chunk = state.mergeFiles.slice(start, start + MERGE_RENDER_CHUNK_SIZE)
+      .map((file, offset) => buildFileListItem(file, start + offset, {
+        allowReorder: true,
+        total: state.mergeFiles.length,
+        showRangeInput: file.kind !== "image",
+        showRotate: file.kind === "image",
+        badgeLabel: getMergeFileKindLabel(file.kind)
+      })).join("");
+    list.insertAdjacentHTML("beforeend", chunk);
+    if (start + MERGE_RENDER_CHUNK_SIZE < state.mergeFiles.length) await yieldToRenderer();
+  }
 
-  list.querySelectorAll("[data-move-up]").forEach((button) => {
-    button.addEventListener("click", () => swapMergeFiles(Number(button.getAttribute("data-move-up")), -1));
-  });
-  list.querySelectorAll("[data-move-down]").forEach((button) => {
-    button.addEventListener("click", () => swapMergeFiles(Number(button.getAttribute("data-move-down")), 1));
-  });
-  list.querySelectorAll("[data-remove]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.mergeFiles.splice(Number(button.getAttribute("data-remove")), 1);
-      renderMergeFileList();
-    });
-  });
-  list.querySelectorAll(".action-file-item").forEach((item) => {
-    item.addEventListener("keydown", (event) => {
-      if (event.target.closest("button, input, select, textarea")) return;
-      if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        const removeButton = item.querySelector("[data-remove]");
-        removeButton?.click();
+  if (!list.dataset.mergeDelegated) {
+    list.dataset.mergeDelegated = "true";
+    list.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || !list.contains(target)) return;
+      if (target.hasAttribute("data-move-up")) return swapMergeFiles(Number(target.getAttribute("data-move-up")), -1);
+      if (target.hasAttribute("data-move-down")) return swapMergeFiles(Number(target.getAttribute("data-move-down")), 1);
+      if (target.hasAttribute("data-merge-rotate-left")) return rotateMergeImage(Number(target.getAttribute("data-merge-rotate-left")), -90);
+      if (target.hasAttribute("data-merge-rotate-right")) return rotateMergeImage(Number(target.getAttribute("data-merge-rotate-right")), 90);
+      if (target.hasAttribute("data-remove")) {
+        state.mergeFiles.splice(Number(target.getAttribute("data-remove")), 1);
+        renderMergeFileList();
       }
     });
-  });
-  list.querySelectorAll(".merge-range-input").forEach((input) => {
-    input.addEventListener("input", (event) => {
-      const idx = Number(event.target.getAttribute("data-index"));
-      if (state.mergeFiles[idx]) {
-        state.mergeFiles[idx].range = event.target.value;
-      }
+    list.addEventListener("input", (event) => {
+      const input = event.target.closest(".merge-range-input");
+      if (!input) return;
+      const idx = Number(input.getAttribute("data-index"));
+      if (state.mergeFiles[idx]) state.mergeFiles[idx].range = input.value;
     });
-  });
-
+    list.addEventListener("keydown", (event) => {
+      const item = event.target.closest(".action-file-item");
+      if (!item || event.target.closest("button, input, select, textarea")) return;
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      event.preventDefault();
+      item.querySelector("[data-remove]")?.click();
+    });
+  }
   buildMergeSmartSummary();
 }
 
@@ -2712,7 +3511,16 @@ function swapMergeFiles(index, direction) {
   renderMergeFileList();
 }
 
+function rotateMergeImage(index, delta) {
+  const item = state.mergeFiles[index];
+  if (!item || item.kind !== "image") return;
+  item.rotation = (((Number(item.rotation) || 0) + delta) % 360 + 360) % 360;
+  renderMergeFileList();
+}
+
 function handleSplitFile(file) {
+  cancelSplitContentSearch();
+  resetSplitContentResults();
   state.selectedSplitFile = file;
   document.getElementById("split-dropzone").classList.add("hidden");
   document.getElementById("split-settings-container").classList.remove("hidden");
@@ -2720,6 +3528,128 @@ function handleSplitFile(file) {
   document.getElementById("split-file-meta").textContent = formatBytes(file.size);
   const cleanName = file.name.replace(/\.pdf$/i, "");
   document.getElementById("split-output-prefix").value = `${cleanName}_separado`;
+}
+
+function resetSplitContentResults() {
+  splitContentStartPages = [];
+  document.getElementById("split-content-results")?.classList.add("hidden");
+  document.getElementById("split-content-result-list")?.replaceChildren();
+  const status = document.getElementById("split-content-status");
+  if (status) {
+    status.textContent = "Os pontos encontrados serão mostrados para revisão antes da divisão.";
+    status.dataset.tone = "";
+  }
+}
+
+function cancelSplitContentSearch() {
+  if (!splitContentSearchRequestId) return;
+  window.api.cancelPdfTextSearch?.(splitContentSearchRequestId);
+  splitContentSearchRequestId = "";
+  const analyzeButton = document.getElementById("btn-split-content-analyze");
+  const suggestButton = document.getElementById("btn-split-content-suggest");
+  const cancelButton = document.getElementById("btn-split-content-cancel");
+  if (analyzeButton) analyzeButton.disabled = false;
+  if (suggestButton) suggestButton.disabled = false;
+  cancelButton?.classList.add("hidden");
+}
+
+async function analyzeSplitContent({ suggestSplitStarts = false } = {}) {
+  const file = state.selectedSplitFile;
+  const query = String(document.getElementById("split-content-query")?.value || "").trim();
+  const status = document.getElementById("split-content-status");
+  const results = document.getElementById("split-content-results");
+  const resultList = document.getElementById("split-content-result-list");
+  const analyzeButton = document.getElementById("btn-split-content-analyze");
+  const suggestButton = document.getElementById("btn-split-content-suggest");
+  const cancelButton = document.getElementById("btn-split-content-cancel");
+  if (!file) return;
+  if (!suggestSplitStarts && query.length < 2) {
+    if (status) { status.textContent = "Digite pelo menos 2 caracteres para pesquisar."; status.dataset.tone = "warning"; }
+    document.getElementById("split-content-query")?.focus();
+    return;
+  }
+  cancelSplitContentSearch();
+  resetSplitContentResults();
+  const requestId = crypto.randomUUID();
+  splitContentSearchRequestId = requestId;
+  if (analyzeButton) analyzeButton.disabled = true;
+  if (suggestButton) suggestButton.disabled = true;
+  cancelButton?.classList.remove("hidden");
+  if (status) {
+    status.textContent = suggestSplitStarts
+      ? "Analisando o topo das páginas para encontrar títulos recorrentes…"
+      : "Preparando o documento para análise…";
+    status.dataset.tone = "info";
+  }
+  const removeProgress = window.api.onOcrSearchProgress?.((progress) => {
+    if (progress?.requestId !== requestId || splitContentSearchRequestId !== requestId) return;
+    if (status) status.textContent = `Analisando página ${progress.page || 0} de ${progress.totalPages || 0}…`;
+  });
+  try {
+    const filePath = await resolveQueuedFilePath(file, "pdf");
+    if (splitContentSearchRequestId !== requestId) return;
+    const result = await window.api.searchPdfText({ requestId, filePath, query, language: "por+eng", suggestSplitStarts });
+    if (splitContentSearchRequestId !== requestId) return;
+    if (result?.cancelled) {
+      if (status) { status.textContent = "Análise cancelada. Nenhuma alteração foi feita no documento."; status.dataset.tone = "info"; }
+      return;
+    }
+    const matches = Array.isArray(result?.matches) ? result.matches : [];
+    const suggestions = Array.isArray(result?.suggestions) ? result.suggestions : [];
+    const suggestionByPage = new Map(suggestions.map((suggestion) => [Number(suggestion.pageNumber), suggestion]));
+    const foundPages = suggestSplitStarts
+      ? suggestions.map((suggestion) => Number(suggestion.pageNumber))
+      : matches.map((match) => Number(match.pageNumber));
+    splitContentStartPages = [...new Set(foundPages.filter((page) => Number.isSafeInteger(page) && page > 1))].sort((a, b) => a - b);
+    const tooManyBreaks = splitContentStartPages.length > 199;
+    splitContentStartPages = splitContentStartPages.slice(0, 199);
+    if (splitContentStartPages.length) {
+      for (const page of splitContentStartPages) {
+        const label = document.createElement("label");
+        label.className = "split-content-result-row";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = !suggestSplitStarts;
+        checkbox.value = String(page);
+        checkbox.setAttribute("aria-label", `Iniciar nova parte na página ${page}`);
+        const description = document.createElement("span");
+        if (suggestSplitStarts) {
+          const suggestion = suggestionByPage.get(page);
+          const heading = String(suggestion?.heading || "título recorrente").slice(0, 100);
+          description.textContent = `Página ${page} · “${heading}” · ${suggestion?.source === "OCR" ? "OCR" : "texto do PDF"} · aparece em ${Number(suggestion?.repeatedOnPages) || 2} páginas`;
+        } else {
+          description.textContent = `Página ${page} · ${matches.some((match) => Number(match.pageNumber) === page && match.source === "OCR") ? "texto reconhecido" : "texto do PDF"}`;
+        }
+        label.append(checkbox, description);
+        resultList?.append(label);
+      }
+      results?.classList.remove("hidden");
+      if (status) {
+        status.textContent = suggestSplitStarts
+          ? `${splitContentStartPages.length}${result?.truncated || tooManyBreaks ? "+" : ""} possível(is) início(s) sugerido(s) em ${Number(result?.scannedPages) || 0} páginas analisadas. As sugestões estão desmarcadas: confira cada página e marque somente as que devem iniciar uma parte${result?.truncated || tooManyBreaks ? ". A lista atingiu o limite de segurança." : "."}`
+          : `${splitContentStartPages.length}${result?.truncated || tooManyBreaks ? "+" : ""} página(s) encontrada(s). Revise as caixas; somente as selecionadas iniciarão uma nova parte${result?.truncated || tooManyBreaks ? ". A lista tem limite de segurança; refine a expressão se necessário." : "."}`;
+        status.dataset.tone = "success";
+      }
+    } else if (status) {
+      status.textContent = suggestSplitStarts
+        ? `Não foram encontrados títulos recorrentes que indiquem possíveis inícios entre as ${Number(result?.scannedPages) || 0} páginas analisadas. Se souber o título, pesquise-o pelo campo de palavra ou frase.`
+        : `Nenhum ponto de separação encontrado para “${query}” nas ${Number(result?.scannedPages) || 0} páginas analisadas. Tente outra palavra ou frase.`;
+      status.dataset.tone = "warning";
+    }
+  } catch (error) {
+    if (splitContentSearchRequestId === requestId && status) {
+      status.textContent = error?.message || "Não foi possível analisar este documento. Verifique se o PDF continua acessível e tente novamente.";
+      status.dataset.tone = "error";
+    }
+  } finally {
+    removeProgress?.();
+    if (splitContentSearchRequestId === requestId) {
+      splitContentSearchRequestId = "";
+      if (analyzeButton) analyzeButton.disabled = false;
+      if (suggestButton) suggestButton.disabled = false;
+      cancelButton?.classList.add("hidden");
+    }
+  }
 }
 
 function handleCompressFile(file) {
@@ -2739,6 +3669,298 @@ function handleCompressFile(file) {
   }
 }
 
+async function handleOcrFiles(files) {
+  const selected = Array.isArray(files) ? files : [...(files || [])];
+  const existingEntries = Array.isArray(state.ocrFiles) ? state.ocrFiles : [];
+  const fileKey = (file) => {
+    const path = String(file?.path || '').trim().toLowerCase();
+    return path || `${String(file?.name || '').trim().toLowerCase()}|${Number(file?.size) || 0}`;
+  };
+  const knownFiles = new Set(existingEntries.map(fileKey));
+  const entries = selected
+    .map((file) => ({ name: file.name, size: file.size, path: file.path || '', fileObject: file, validationStatus: 'pending' }))
+    .filter((entry) => {
+      const key = fileKey(entry);
+      if (knownFiles.has(key)) return false;
+      knownFiles.add(key);
+      return true;
+    });
+  if (!entries.length) return;
+  document.getElementById('ocr-dropzone')?.classList.add('hidden');
+  document.getElementById('ocr-settings-card')?.classList.remove('hidden');
+  const result = await window.api.preflightBatchFiles({ type: 'ocr', files: entries.map((item) => item.path) });
+  const ocrRuntime = result?.ocrRuntime;
+  state.ocrRuntime = ocrRuntime && typeof ocrRuntime === 'object' ? ocrRuntime : null;
+  const hasAnyOcrModel = Array.isArray(ocrRuntime?.availableLanguages) && ocrRuntime.availableLanguages.length > 0;
+  const hasAllOcrModels = Boolean(ocrRuntime?.available);
+  const languageSelect = document.getElementById('ocr-language');
+  if (hasAnyOcrModel && !hasAllOcrModels && languageSelect) {
+    const fallbackLanguage = ocrRuntime.availableLanguages.includes('por') ? 'por' : 'eng';
+    if (!ocrRuntime.availableLanguages.includes(languageSelect.value.split('+')[0]) || languageSelect.value.includes('+')) {
+      languageSelect.value = fallbackLanguage;
+    }
+  }
+  const runtimeWarning = document.getElementById('ocr-runtime-warning');
+  if (runtimeWarning) {
+    runtimeWarning.textContent = ocrRuntime?.missingLanguages?.length
+      ? ocrRuntime.message || 'Os arquivos foram verificados, mas os modelos OCR não estão disponíveis. Reinstale o Central PDF ou procure o suporte de TI.'
+      : '';
+    runtimeWarning.classList.toggle('hidden', !ocrRuntime?.missingLanguages?.length);
+    runtimeWarning.dataset.tone = ocrRuntime?.missingLanguages?.length ? 'warning' : '';
+  }
+  const byPath = new Map((result?.results || []).map((item) => [item.path, item]));
+  const addedEntries = entries.map((entry) => ({ ...entry, validation: byPath.get(entry.path) }));
+  state.ocrFiles = [...existingEntries, ...addedEntries];
+  renderOcrFileList();
+  renderOcrImagePreview();
+  const valid = state.ocrFiles.filter((entry) => entry.validation?.status === 'valid');
+  ocrAreaExtractor.setFiles(valid);
+  const addedValid = addedEntries.filter((entry) => entry.validation?.status === 'valid').length;
+  const invalid = addedEntries.length - addedValid;
+  if (!hasAnyOcrModel) {
+    notify({ tone: 'warning', title: 'OCR indisponível neste aplicativo', message: `${addedValid} arquivo(s) passaram pela verificação, mas não podem ser reconhecidos agora.${invalid ? ` ${invalid} arquivo(s) também apresentaram problemas.` : ''}`, detail: ocrRuntime.message, important: true });
+  } else if (ocrRuntime?.missingLanguages?.length) {
+    notify({ tone: 'warning', title: 'OCR parcialmente disponível', message: `Os arquivos foram verificados. O idioma foi ajustado para ${languageSelect?.value === 'por' ? 'português' : 'inglês'}, que está instalado.`, detail: ocrRuntime.message });
+  } else {
+    notify({ tone: invalid ? 'warning' : 'success', title: invalid ? 'Arquivos adicionados com atenção' : 'Arquivos adicionados', message: `${addedValid} arquivo(s) pronto(s) para reconhecimento.${invalid ? ` ${invalid} arquivo(s) não poderão ser processado(s).` : ''}` });
+  }
+}
+
+function removeOcrFile(removeIndex) {
+  if (!Array.isArray(state.ocrFiles) || removeIndex < 0 || removeIndex >= state.ocrFiles.length) return;
+  state.ocrFiles.splice(removeIndex, 1);
+  if (state.ocrFiles.length === 0) {
+    clearOcrWorkspace();
+    return;
+  }
+  renderOcrFileList();
+  renderOcrImagePreview();
+  const valid = state.ocrFiles.filter((entry) => entry.validation?.status === 'valid');
+  ocrAreaExtractor.setFiles(valid);
+}
+
+function renderOcrFileList() {
+  const list = document.getElementById('ocr-file-list');
+  const subtitle = document.getElementById('ocr-files-subtitle');
+  if (!list) return;
+  const count = state.ocrFiles.length;
+  if (subtitle) {
+    subtitle.textContent = count
+      ? `${count} arquivo${count === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}. Remova individualmente ou adicione mais.`
+      : 'Adicione mais documentos ou limpe a seleção.';
+  }
+  if (!count) {
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = state.ocrFiles.map((entry, index) => {
+    const status = entry.validation?.status || 'invalid';
+    const statusLabel = status === 'valid' ? 'Pronto' : (entry.validation?.message || 'Não disponível');
+    return `
+      <li class="action-file-item" data-index="${index}" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; gap: 8px;">
+        <div class="action-file-info" style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+          ${icon('file')}
+          <div class="selected-file-meta" style="min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="action-file-name" title="${escapeHtml(entry.path || entry.name)}">${escapeHtml(entry.name)}</span>
+              <span class="file-validation-status file-validation-${status}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <span class="action-file-size" style="font-size: 0.74rem; color: var(--text-secondary);">${escapeHtml(formatBytes(entry.size))}</span>
+          </div>
+        </div>
+        <div class="action-file-controls" style="flex: 0 0 auto;">
+          <button type="button" class="btn-danger-text btn-sm" data-remove-ocr="${index}" title="Remover ${escapeHtml(entry.name)} da lista" aria-label="Remover ${escapeHtml(entry.name)}">${icon('remove')}</button>
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  list.querySelectorAll('[data-remove-ocr]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const removeIndex = Number(button.getAttribute('data-remove-ocr'));
+      removeOcrFile(removeIndex);
+    });
+  });
+}
+
+function releaseOcrImagePreviewUrl() {
+  ocrImagePreviewToken += 1;
+  if (ocrImagePreviewUrl) URL.revokeObjectURL(ocrImagePreviewUrl);
+  ocrImagePreviewUrl = '';
+  const image = document.getElementById('ocr-image-preview');
+  if (image) {
+    image.onload = null;
+    image.onerror = null;
+    image.removeAttribute('src');
+    image.classList.add('hidden');
+  }
+}
+
+function clearOcrImagePreview() {
+  releaseOcrImagePreviewUrl();
+  document.getElementById('ocr-image-preview-card')?.classList.add('hidden');
+  document.getElementById('ocr-image-preview-file')?.replaceChildren();
+  const status = document.getElementById('ocr-image-preview-status');
+  if (status) status.textContent = '';
+}
+
+function renderOcrImagePreview() {
+  const card = document.getElementById('ocr-image-preview-card');
+  const select = document.getElementById('ocr-image-preview-file');
+  const image = document.getElementById('ocr-image-preview');
+  const status = document.getElementById('ocr-image-preview-status');
+  if (!card || !select || !image || !status) return;
+
+  const previousValue = select.value;
+  const imageEntries = (Array.isArray(state.ocrFiles) ? state.ocrFiles : [])
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry?.validation?.status === 'valid' && /\.(?:jpe?g|png|tiff?)$/i.test(entry.name || ''));
+  const hasPdfs = (Array.isArray(state.ocrFiles) ? state.ocrFiles : []).some(
+    (entry) => entry?.validation?.status === 'valid' && /\.pdf$/i.test(entry.name || '')
+  );
+
+  // If there are PDFs, ocr-area-card is the active workspace; don't show stacked image preview card.
+  if (hasPdfs || !imageEntries.length) {
+    clearOcrImagePreview();
+    return;
+  }
+
+  select.replaceChildren();
+  for (const { entry, index } of imageEntries) {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = entry.name;
+    select.append(option);
+  }
+  card.classList.remove('hidden');
+
+  select.value = imageEntries.some(({ index }) => String(index) === previousValue)
+    ? previousValue
+    : String(imageEntries[0].index);
+  const selected = state.ocrFiles[Number(select.value)];
+  releaseOcrImagePreviewUrl();
+  status.textContent = 'Carregando prévia local…';
+  const fileObject = selected?.fileObject;
+  const isTiff = /\.tiff?$/i.test(selected?.name || '');
+
+  if (isTiff) {
+    image.classList.add('hidden');
+    status.textContent = 'Arquivo TIFF pronto para reconhecimento de texto via OCR.';
+    return;
+  }
+
+  if (typeof Blob === 'undefined' || !(fileObject instanceof Blob) || typeof URL?.createObjectURL !== 'function') {
+    image.classList.add('hidden');
+    status.textContent = 'Imagem pronta para reconhecimento de texto via OCR.';
+    return;
+  }
+
+  const token = ocrImagePreviewToken;
+  try {
+    ocrImagePreviewUrl = URL.createObjectURL(fileObject);
+    image.onload = () => {
+      if (token !== ocrImagePreviewToken) return;
+      image.classList.remove('hidden');
+      status.textContent = `${image.naturalWidth} × ${image.naturalHeight} px · prévia local`;
+    };
+    image.onerror = () => {
+      if (token !== ocrImagePreviewToken) return;
+      image.classList.add('hidden');
+      status.textContent = 'Imagem pronta para reconhecimento via OCR.';
+    };
+    image.src = ocrImagePreviewUrl;
+  } catch {
+    releaseOcrImagePreviewUrl();
+    image.classList.add('hidden');
+    status.textContent = 'Imagem pronta para reconhecimento via OCR.';
+  }
+}
+
+async function queueOcr(forcedFormat) {
+  if (state.ocrRuntime && state.ocrRuntime.availableLanguages.length === 0) {
+    showValidationMessage(document.getElementById('ocr-runtime-warning')?.textContent || 'O OCR não está disponível neste aplicativo. Reinstale o Central PDF ou procure o suporte de TI.');
+    return;
+  }
+  const requestedLanguages = (document.getElementById('ocr-language')?.value || 'por+eng').split('+');
+  if (state.ocrRuntime && requestedLanguages.some((language) => !state.ocrRuntime.availableLanguages.includes(language))) {
+    showValidationMessage(state.ocrRuntime.message || 'O idioma selecionado não está instalado neste aplicativo. Escolha outro idioma disponível ou reinstale o Central PDF.');
+    return;
+  }
+  const validFiles = state.ocrFiles.filter((entry) => entry.validation?.status === 'valid');
+  if (!validFiles.length) {
+    showValidationMessage('Adicione pelo menos um PDF ou imagem válido para reconhecer o texto.');
+    return;
+  }
+  const format = typeof forcedFormat === 'string' && ['pdf', 'text'].includes(forcedFormat)
+    ? forcedFormat
+    : (document.getElementById('ocr-format')?.value || 'pdf');
+  const outputName = document.getElementById('ocr-output-name')?.value.trim() || '';
+  const result = await window.api.queueOperation({
+    type: 'ocr',
+    files: validFiles.map((entry) => entry.path),
+    options: {
+      language: document.getElementById('ocr-language')?.value || 'por+eng',
+      mode: document.getElementById('ocr-mode')?.value || 'auto',
+      format,
+      autoRotate: document.getElementById('ocr-auto-rotate')?.checked !== false,
+      imageEnhancement: document.getElementById('ocr-image-enhancement')?.checked !== false,
+      pageRange: document.getElementById('ocr-page-range')?.value.trim() || '',
+      ...(outputName ? { outputName } : {}),
+      zipResults: document.getElementById('ocr-zip')?.checked ?? false,
+      originalFileNames: validFiles.map((entry) => entry.name)
+    }
+  });
+  if (!result?.success) showOperationFailure('ocr', result?.error);
+  else notify({
+    tone: 'success',
+    title: format === 'text' ? 'Exportação TXT enviada' : 'Reconhecimento enviado',
+    message: format === 'text'
+      ? 'Os arquivos estão sendo processados para texto (.txt) na fila.'
+      : 'Os arquivos foram adicionados à fila. O progresso aparecerá no painel de processamento.'
+  });
+}
+
+function queueOcrTxt() {
+  return queueOcr('text');
+}
+
+function clearOcrWorkspace() {
+  clearPreviousTabState('ocr');
+  document.getElementById('ocr-file-input').value = '';
+  document.getElementById('ocr-dropzone')?.classList.remove('hidden');
+  document.getElementById('ocr-settings-card')?.classList.add('hidden');
+}
+
+async function routeEditorFileToOrganize(source) {
+  const isSignature = source === "signature";
+  const file = isSignature ? state.signatureFile : state.redactFile;
+  if (!file) return;
+
+  const hasPlacedElements = isSignature
+    ? state.signatureFields.length > 0
+    : (state.redactBoxes || []).length > 0;
+  const proceed = async () => {
+    if (isSignature) signatureWorkspace.clearWorkspace();
+    else redactWorkspace.clearWorkspace();
+    switchTab("organize", { skipGuard: true });
+    await organizeWorkspace.handleOrganizeFile(file);
+  };
+
+  if (hasPlacedElements) {
+    showCustomConfirmModal(
+      "Corrigir orientação",
+      isSignature
+        ? "Os campos de assinatura atuais serão removidos antes de abrir o documento em Organizar Páginas. Deseja continuar?"
+        : "As tarjas atuais serão removidas antes de abrir o documento em Organizar Páginas. Deseja continuar?",
+      proceed
+    );
+    return;
+  }
+
+  await proceed();
+}
+
 function setupOperations() {
   bindClick("btn-run-images-pdf", queueImagesToPdf);
   bindClick("btn-run-signature", queueSignature);
@@ -2751,6 +3973,16 @@ function setupOperations() {
   bindClick("btn-run-protect", queueProtect);
   bindClick("btn-run-unlock", queueUnlock);
   bindClick("btn-run-redact", queueRedact);
+  bindClick("btn-run-ocr", queueOcr);
+  bindClick("btn-run-ocr-txt", queueOcrTxt);
+
+  bindClick("btn-ocr-add-more", () => document.getElementById("ocr-file-input")?.click());
+  bindClick("btn-ocr-clear", clearOcrWorkspace);
+  const ocrImagePreviewFileSelect = document.getElementById('ocr-image-preview-file');
+  if (ocrImagePreviewFileSelect && !ocrImagePreviewFileSelect.dataset.previewBound) {
+    ocrImagePreviewFileSelect.addEventListener('change', renderOcrImagePreview);
+    ocrImagePreviewFileSelect.dataset.previewBound = 'true';
+  }
 
   const btnImagesAddMore = document.getElementById("btn-images-pdf-add-more");
   if (btnImagesAddMore) {
@@ -2760,12 +3992,19 @@ function setupOperations() {
   if (btnMergeAddMore) {
     btnMergeAddMore.addEventListener("click", () => document.getElementById("merge-file-input").click());
   }
+  bindClick("btn-merge-clear", () => {
+    state.mergeFiles = [];
+    void renderMergeFileList();
+  });
   const btnWatermarkAddMore = document.getElementById("btn-watermark-add-more");
   if (btnWatermarkAddMore) {
     btnWatermarkAddMore.addEventListener("click", () => document.getElementById("watermark-file-input").click());
   }
+  bindClick("btn-watermark-clear", watermarkWorkspace.clearWorkspace);
 
   bindClick("btn-split-change-file", () => {
+    cancelSplitContentSearch();
+    resetSplitContentResults();
     state.selectedSplitFile = null;
     document.getElementById("split-settings-container").classList.add("hidden");
     document.getElementById("split-dropzone").classList.remove("hidden");
@@ -2783,9 +4022,12 @@ function setupOperations() {
   if (btnOrganizeAddFile && organizeAddFileInput) {
     btnOrganizeAddFile.addEventListener("click", () => organizeAddFileInput.click());
     organizeAddFileInput.addEventListener("change", async (event) => {
-      const files = [...(event.target.files || [])];
-      await organizeWorkspace.addOrganizeFiles(files);
-      organizeAddFileInput.value = "";
+      try {
+        const files = normalizeSelectedFiles(event.target.files);
+        await organizeWorkspace.addOrganizeFiles(files);
+      } finally {
+        organizeAddFileInput.value = "";
+      }
     });
   }
   const btnOrganizeAddImage = document.getElementById("btn-organize-add-image");
@@ -2793,9 +4035,12 @@ function setupOperations() {
   if (btnOrganizeAddImage && organizeAddImageInput) {
     btnOrganizeAddImage.addEventListener("click", () => organizeAddImageInput.click());
     organizeAddImageInput.addEventListener("change", async (event) => {
-      const files = [...(event.target.files || [])];
-      await organizeWorkspace.addOrganizeFiles(files);
-      organizeAddImageInput.value = "";
+      try {
+        const files = normalizeSelectedFiles(event.target.files);
+        await organizeWorkspace.addOrganizeFiles(files);
+      } finally {
+        organizeAddImageInput.value = "";
+      }
     });
   }
   bindClick("btn-organize-move-first", () => organizeWorkspace.moveSelectedPages("first"));
@@ -2803,6 +4048,8 @@ function setupOperations() {
   bindClick("btn-organize-move-down", () => organizeWorkspace.moveSelectedPages("down"));
   bindClick("btn-organize-move-last", () => organizeWorkspace.moveSelectedPages("last"));
   bindClick("btn-organize-rotate-selected", organizeWorkspace.rotateSelectedPages);
+  bindClick("btn-signature-fix-orientation", () => routeEditorFileToOrganize("signature"));
+  bindClick("btn-redact-fix-orientation", () => routeEditorFileToOrganize("redact"));
   bindClick("btn-organize-duplicate-selected", organizeWorkspace.duplicateSelectedPages);
   bindClick("btn-organize-delete-selected", organizeWorkspace.deleteSelectedPages);
   bindClick("btn-organize-reverse", organizeWorkspace.reverseOrganizeOrder);
@@ -2810,9 +4057,26 @@ function setupOperations() {
   document.querySelectorAll('input[name="split-mode"]').forEach((radio) => {
     radio.addEventListener("change", (event) => {
       const mode = event.target.value;
+      if (mode !== "content") cancelSplitContentSearch();
       document.getElementById("split-range-input-group").classList.toggle("hidden", mode !== "range");
       document.getElementById("split-size-input-group").classList.toggle("hidden", mode !== "size");
+      document.getElementById("split-content-input-group").classList.toggle("hidden", mode !== "content");
     });
+  });
+  bindClick("btn-split-content-analyze", analyzeSplitContent);
+  bindClick("btn-split-content-suggest", () => analyzeSplitContent({ suggestSplitStarts: true }));
+  bindClick("btn-split-content-cancel", () => {
+    cancelSplitContentSearch();
+    const status = document.getElementById("split-content-status");
+    if (status) { status.textContent = "Análise cancelada. Nenhuma alteração foi feita no documento."; status.dataset.tone = "info"; }
+  });
+  const splitContentQuery = document.getElementById("split-content-query");
+  splitContentQuery?.addEventListener("input", () => {
+    if (!splitContentStartPages.length && !splitContentSearchRequestId) return;
+    cancelSplitContentSearch();
+    resetSplitContentResults();
+    const status = document.getElementById("split-content-status");
+    if (status) { status.textContent = "A busca mudou. Analise novamente para confirmar os pontos de separação."; status.dataset.tone = "info"; }
   });
 
   bindClick("btn-select-output-dir", async () => {
@@ -2837,6 +4101,17 @@ function setupOperations() {
     await window.api.updateColorTheme(event.target.value);
     state.appConfig.colorTheme = event.target.value;
     applyColorTheme(event.target.value);
+  });
+
+  bindChange("setting-open-output-automatically", async (event) => {
+    const enabled = event.target.checked === true;
+    try {
+      await window.api.updateOpenOutputAutomatically(enabled);
+      state.appConfig.openOutputAutomatically = enabled;
+    } catch (error) {
+      event.target.checked = state.appConfig?.openOutputAutomatically === true;
+      throw error;
+    }
   });
 
   bindClick("btn-export-diagnostics", async () => {
@@ -2877,7 +4152,13 @@ function setupOperations() {
 }
 
 async function queueMerge() {
-  if (state.mergeFiles.length < 2) {
+  const pendingFiles = state.mergeFiles.filter((file) => file.validationStatus === "pending");
+  if (pendingFiles.length > 0) {
+    showValidationMessage("Aguarde a verificação dos arquivos terminar.");
+    return;
+  }
+  const mergeableFiles = state.mergeFiles.filter((file) => file.validationStatus === "valid");
+  if (mergeableFiles.length < 2) {
     showValidationMessage("Selecione pelo menos 2 arquivos para mesclar.");
     return;
   }
@@ -2891,25 +4172,36 @@ async function queueMerge() {
   const filePaths = [];
   const originalFileNames = [];
   const cleanupPaths = [];
-  const mixedKinds = new Set();
+  const ranges = [];
+  const preparationWarnings = [];
 
-  try {
-    for (const item of state.mergeFiles) {
+  const preparedResults = await mapWithConcurrency(mergeableFiles, 2, async (item) => {
+    try {
       const prepared = await prepareMergeInputFile(item);
-      if (!prepared?.path) continue;
-      filePaths.push(prepared.path);
-      originalFileNames.push(item.name || "");
-      cleanupPaths.push(...(prepared.cleanupPaths || []));
-      mixedKinds.add(prepared.kind);
+      if (!prepared?.path) throw new Error("não foi possível obter o arquivo preparado");
+      return { item, prepared };
+    } catch (error) {
+      return { item, error };
     }
-  } catch (error) {
-    console.error("Erro ao preparar arquivos para mesclagem:", error);
-    showOperationFailure("merge", `N\u00e3o foi poss\u00edvel preparar os arquivos: ${error.message || error}`);
-    return;
+  });
+
+  for (const result of preparedResults) {
+    if (result?.prepared?.path) {
+      filePaths.push(result.prepared.path);
+      originalFileNames.push(result.item.name || "");
+      ranges.push(result.item.range || "");
+      cleanupPaths.push(...(result.prepared.cleanupPaths || []));
+    } else {
+      const fileName = result?.item?.name || "arquivo selecionado";
+      preparationWarnings.push(`Arquivo "${fileName}" foi ignorado: não foi possível prepará-lo para mesclagem.`);
+    }
   }
 
   if (filePaths.length < 2) {
-    showValidationMessage("N\u00e3o foi poss\u00edvel preparar arquivos suficientes para mesclar.");
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
+    showOperationFailure("merge", preparationWarnings.slice(0, 8).join("\n") || "Não foi possível preparar arquivos suficientes para mesclar.");
     return;
   }
 
@@ -2919,12 +4211,18 @@ async function queueMerge() {
     options: {
       outputName,
       zipResults: document.getElementById("merge-zip")?.checked ?? false,
+      searchableOcr: document.getElementById("merge-searchable-ocr")?.checked ?? false,
       cleanupPaths,
-      originalFileNames
+      originalFileNames,
+      ranges,
+      validationWarnings: preparationWarnings
     }
   });
 
   if (!result.success) {
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
     showOperationFailure("merge", result.error);
     return;
   }
@@ -3005,6 +4303,7 @@ async function queuePdfToWord() {
   }
 
   payload.options.zipResults = document.getElementById("pdf-to-word-zip")?.checked ?? false;
+  payload.options.useOcr = document.getElementById("pdf-to-word-use-ocr")?.checked ?? false;
   payload.options.originalFileNames = [state.pdfToWordFile.name || ""];
   payload.files = [await resolveQueuedFilePath(state.pdfToWordFile, "pdf")];
   const result = await queueOperation(payload);
@@ -3028,6 +4327,17 @@ async function queueImagesToPdf() {
     return;
   }
 
+  const pendingFiles = state.imagePdfFiles.filter((file) => (file.validationStatus || 'valid') === 'pending');
+  if (pendingFiles.length > 0) {
+    showValidationMessage("Aguarde a verificação dos arquivos terminar.");
+    return;
+  }
+  const inputFiles = state.imagePdfFiles.filter((file) => (file.validationStatus || 'valid') === 'valid');
+  if (inputFiles.length === 0) {
+    showOperationFailure("files-to-pdf", "Nenhum arquivo válido está disponível para conversão.");
+    return;
+  }
+
   const outputName = document.getElementById("images-pdf-output-name").value.trim();
   if (!outputName) {
     showValidationMessage("Informe o nome do PDF final.");
@@ -3035,12 +4345,16 @@ async function queueImagesToPdf() {
   }
 
   const optimize = document.getElementById("images-pdf-optimize")?.checked ?? false;
-  const hasOfficeDocument = state.imagePdfFiles.some((item) => /\.(docx|xlsx)$/i.test(item.name || ""));
+  const hasOfficeDocument = inputFiles.some((item) => /\.(docx|xlsx)$/i.test(item.name || ""));
   if (optimize && hasOfficeDocument) {
     showValidationMessage("O modo otimizado está disponível apenas para imagens. Desmarque-o para converter documentos.");
     return;
   }
   let filePaths = [];
+  const cleanupPaths = [];
+  const sourceRotations = [];
+  const preparedOriginalFileNames = [];
+  const preparationWarnings = [];
 
   const runBtn = document.getElementById("btn-run-images-pdf");
   const originalText = runBtn.innerHTML;
@@ -3049,40 +4363,59 @@ async function queueImagesToPdf() {
   runBtn.innerText = optimize ? "Preparando..." : "Enviando...";
 
   try {
-    for (const item of state.imagePdfFiles) {
-      if (/\.(docx|xlsx)$/i.test(item.name || "")) {
-        const sourcePath = await resolveQueuedFilePath(item, item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx' : 'docx');
-        filePaths.push(await window.api.convertDocumentToTempPdf(sourcePath));
-        continue;
-      }
-
-      if (optimize) {
-        const fileObj = item.fileObject;
-        if (!fileObj) {
-          throw new Error("Arquivo não disponível para otimização.");
+    for (const item of inputFiles) {
+      try {
+        if (/\.(docx|xlsx)$/i.test(item.name || "")) {
+          const sourcePath = await resolveQueuedFilePath(item, item.name.toLowerCase().endsWith('.xlsx') ? 'xlsx' : 'docx');
+          const tempPath = await window.api.convertDocumentToTempPdf(sourcePath);
+          filePaths.push(tempPath);
+          preparedOriginalFileNames.push(item.name || "arquivo");
+          sourceRotations.push(0);
+          cleanupPaths.push(tempPath);
+          continue;
         }
-        const base64Data = await downsampleImage(fileObj, 1500, 0.75);
-        const tempPath = await window.api.saveTempFile({ base64Data, extension: "jpg" });
-        filePaths.push(tempPath);
-        continue;
-      }
 
-      if (item.path) {
-        filePaths.push(item.path);
-        continue;
+        if (optimize) {
+          const fileObj = item.fileObject;
+          if (!fileObj) {
+            throw new Error("arquivo não disponível para otimização");
+          }
+          const base64Data = await downsampleImage(fileObj, 1500, 0.75);
+          const tempPath = await window.api.saveTempFile({ base64Data, extension: "jpg" });
+          filePaths.push(tempPath);
+          preparedOriginalFileNames.push(item.name || "arquivo");
+          sourceRotations.push(Number(item.rotation) || 0);
+          cleanupPaths.push(tempPath);
+          continue;
+        }
+
+        if (item.path) {
+          filePaths.push(item.path);
+          preparedOriginalFileNames.push(item.name || "arquivo");
+          sourceRotations.push(Number(item.rotation) || 0);
+          continue;
+        }
+        if (!item.fileObject) {
+          throw new Error("imagem sem caminho local e sem conteúdo disponível");
+        }
+        const base64Data = await fileToBase64(item.fileObject);
+        const ext = (item.fileObject.name || item.name || "jpg").split(".").pop().toLowerCase();
+        const tempPath = await window.api.saveTempFile({
+          base64Data,
+          extension: ["jpg", "jpeg", "png"].includes(ext) ? ext : "jpg"
+        });
+        filePaths.push(tempPath);
+        preparedOriginalFileNames.push(item.name || "arquivo");
+        sourceRotations.push(Number(item.rotation) || 0);
+        cleanupPaths.push(tempPath);
+      } catch (error) {
+        preparationWarnings.push(`Arquivo "${item.name || 'sem nome'}" foi ignorado: ${error.message || 'não foi possível prepará-lo'}.`);
       }
-      if (!item.fileObject) {
-        throw new Error("Arquivo de imagem sem caminho local e sem conteúdo disponível.");
-      }
-      const base64Data = await fileToBase64(item.fileObject);
-      const ext = (item.fileObject.name || item.name || "jpg").split(".").pop().toLowerCase();
-      const tempPath = await window.api.saveTempFile({
-        base64Data,
-        extension: ["jpg", "jpeg", "png"].includes(ext) ? ext : "jpg"
-      });
-      filePaths.push(tempPath);
     }
   } catch (error) {
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
     console.error("Erro na preparação dos arquivos para PDF:", error);
     showOperationFailure("files-to-pdf", `Não foi possível preparar os arquivos: ${error.message || error}`);
     return;
@@ -3091,17 +4424,32 @@ async function queueImagesToPdf() {
     runBtn.innerHTML = originalText;
   }
 
+  if (filePaths.length === 0) {
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
+    showOperationFailure("files-to-pdf", preparationWarnings.slice(0, 8).join("\n") || "Nenhum arquivo pôde ser preparado para conversão.");
+    return;
+  }
+
   const result = await queueOperation({
     type: "files-to-pdf",
     files: filePaths,
     options: {
       outputName,
-        zipResults: document.getElementById("images-pdf-zip")?.checked ?? false,
-        originalFileNames: state.imagePdfFiles.map((item) => item.name || "")
+      zipResults: document.getElementById("images-pdf-zip")?.checked ?? false,
+      originalFileNames: preparedOriginalFileNames,
+      sourceRotations,
+      searchableOcr: document.getElementById("images-pdf-searchable")?.checked ?? false,
+      cleanupPaths,
+      validationWarnings: preparationWarnings
     }
   });
 
   if (!result.success) {
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
     showOperationFailure("files-to-pdf", result.error);
     return;
   }
@@ -3140,6 +4488,20 @@ async function queueSplit() {
     }
     type = "split-size";
     options.maxSizeBytes = sizeMb * 1024 * 1024;
+  } else if (mode === "content") {
+    const selectedPages = [...(document.querySelectorAll("#split-content-result-list input[type='checkbox']:checked") || [])]
+      .map((checkbox) => Number(checkbox.value))
+      .filter((page) => Number.isSafeInteger(page) && page > 1);
+    if (!splitContentStartPages.length) {
+      showValidationMessage("Analise o documento e revise os pontos encontrados antes de iniciar a divisão por conteúdo.");
+      return;
+    }
+    if (!selectedPages.length) {
+      showValidationMessage("Selecione pelo menos uma página para iniciar uma nova parte.");
+      return;
+    }
+    type = "split-content";
+    options.startPages = [...new Set(selectedPages)].sort((a, b) => a - b);
   }
 
   options.zipResults = document.getElementById("split-zip")?.checked ?? false;
@@ -3157,10 +4519,13 @@ async function queueSplit() {
   }
   showOperationQueuedFeedback(type, result);
 
+  cancelSplitContentSearch();
+  resetSplitContentResults();
   state.selectedSplitFile = null;
   document.getElementById("split-settings-container").classList.add("hidden");
   document.getElementById("split-dropzone").classList.remove("hidden");
   switchTab("dashboard", { skipGuard: true });
+  return result;
 }
 
 async function queueCompress() {
@@ -3268,7 +4633,7 @@ async function queueCompress() {
 }
 
 async function queueOrganize() {
-  if (!state.organizeFile && (!state.organizeFiles || state.organizeFiles.length === 0)) return;
+  if (state.organizeFiles.length === 0) return;
   if (state.organizePages.length === 0) {
     showValidationMessage("Mantenha pelo menos uma página antes de salvar.");
     return;
@@ -3283,8 +4648,7 @@ async function queueOrganize() {
   try {
     const cleanupPaths = [...new Set((state.organizeTempPaths || []).filter((item) => typeof item === "string" && item.trim()))];
     const filesArray = [];
-    const organizeInputs = state.organizeFiles && state.organizeFiles.length > 0 ? state.organizeFiles : [state.organizeFile];
-    for (const file of organizeInputs) {
+    for (const file of state.organizeFiles) {
       filesArray.push(await resolveQueuedFilePath(file, "pdf"));
     }
 
@@ -3321,7 +4685,7 @@ async function queueOrganize() {
         zipResults: document.getElementById("organize-zip")?.checked ?? false,
         numberPages: document.getElementById("organize-number-pages")?.checked ?? false,
         cleanupPaths,
-        originalFileNames: organizeInputs.map((file) => file.name || "")
+        originalFileNames: state.organizeFiles.map((file) => file.name || "")
       }
     });
 
@@ -3343,11 +4707,47 @@ async function queueOrganize() {
 async function queueWatermark() {
   if (!watermarkWorkspace.validateBeforeQueue()) return;
 
+  const pendingFiles = (state.watermarkFiles || []).filter((file) => (file.validationStatus || 'pending') === 'pending');
+  if (pendingFiles.length > 0) {
+    showValidationMessage("Aguarde a verificação dos arquivos terminar.");
+    return;
+  }
+  const validWatermarkFiles = (state.watermarkFiles || []).filter((file) => file.validationStatus === 'valid');
+  if (validWatermarkFiles.length === 0) {
+    showOperationFailure("watermark", "Nenhum arquivo válido está disponível para aplicar a marca d'água.");
+    return;
+  }
+
   const payload = watermarkWorkspace.getQueuePayload();
+  payload.files = validWatermarkFiles.map((file) => file.path);
+  payload.options.sourceRotations = validWatermarkFiles.map((file) => Number(file.rotation) || 0);
   payload.options.zipResults = document.getElementById("watermark-zip")?.checked ?? false;
   payload.options.numberPages = document.getElementById("watermark-number-pages")?.checked ?? false;
-  payload.options.originalFileNames = (state.watermarkFiles || []).map((file) => file.name || "");
-  payload.files = await Promise.all((state.watermarkFiles || []).map((file) => resolveQueuedFilePath(file, "pdf")));
+  const watermarkFiles = [];
+  const watermarkOriginalFileNames = [];
+  const watermarkWarnings = [];
+  const watermarkResults = await mapWithConcurrency(validWatermarkFiles, 4, async (file) => {
+    try {
+      return { file, resolvedPath: await resolveQueuedFilePath(file, "pdf") };
+    } catch (error) {
+      return { file, error };
+    }
+  });
+  for (const result of watermarkResults) {
+    if (result?.resolvedPath) {
+      watermarkFiles.push(result.resolvedPath);
+      watermarkOriginalFileNames.push(result.file.name || "arquivo");
+    } else {
+      watermarkWarnings.push(`Arquivo "${result?.file?.name || 'sem nome'}" foi ignorado: não foi possível prepará-lo.`);
+    }
+  }
+  if (watermarkFiles.length === 0) {
+    showOperationFailure("watermark", watermarkWarnings.slice(0, 8).join("\n") || "Nenhum arquivo pôde ser preparado para aplicar a marca d'água.");
+    return;
+  }
+  payload.options.originalFileNames = watermarkOriginalFileNames;
+  payload.options.validationWarnings = watermarkWarnings;
+  payload.files = watermarkFiles;
   if (payload.options.watermarkKind === "image" && state.watermarkImageFile) {
     payload.options.imagePath = await resolveQueuedFilePath(state.watermarkImageFile, "png");
   }
@@ -3396,7 +4796,7 @@ async function resolveQueuedFilePath(fileLike, fallbackExtension = "pdf") {
       if (exists?.exists) {
         return candidatePath;
       }
-    } catch (_) {
+    } catch {
       // Fallback to temp copy below.
     }
   }
@@ -3425,7 +4825,7 @@ async function waitForExistingPath(targetPath, timeoutMs = 3000, intervalMs = 15
       if (exists?.exists) {
         return true;
       }
-    } catch (_) {}
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   return false;
@@ -3435,25 +4835,32 @@ async function prepareMergeInputFile(item) {
   const isImage = item.kind === "image" || /\.(jpg|jpeg|png)$/i.test(item?.name || "");
   const cleanupPaths = [];
 
-  if (isImage) {
-    let imagePath = "";
-    const imageFile = item.fileObject || null;
-    if (imageFile) {
-      const base64Data = await downsampleImage(imageFile, 2200, 0.82);
-      imagePath = await window.api.saveTempFile({ base64Data, extension: "jpg" });
-      if (imagePath) cleanupPaths.push(imagePath);
-    } else {
-      imagePath = await resolveQueuedFilePath(item, "png");
-      if (!item.path && imagePath) cleanupPaths.push(imagePath);
+  try {
+    if (isImage) {
+      let imagePath;
+      const imageFile = item.fileObject || null;
+      if (imageFile) {
+        const base64Data = await downsampleImage(imageFile, 2200, 0.82);
+        imagePath = await window.api.saveTempFile({ base64Data, extension: "jpg" });
+        if (imagePath) cleanupPaths.push(imagePath);
+      } else {
+        imagePath = await resolveQueuedFilePath(item, "png");
+        if (!item.path && imagePath) cleanupPaths.push(imagePath);
+      }
+      const tempPdfPath = await window.api.convertImageToTempPdf(imagePath, Number(item.rotation) || 0);
+      if (tempPdfPath) cleanupPaths.push(tempPdfPath);
+      return { path: tempPdfPath, cleanupPaths, kind: "image" };
     }
-    const tempPdfPath = await window.api.convertImageToTempPdf(imagePath);
-    if (tempPdfPath) cleanupPaths.push(tempPdfPath);
-    return { path: tempPdfPath, cleanupPaths, kind: "image" };
-  }
 
-  const pdfPath = await resolveQueuedFilePath(item, "pdf");
-  if (!item.path && pdfPath) cleanupPaths.push(pdfPath);
-  return { path: pdfPath, cleanupPaths, kind: "pdf" };
+    const pdfPath = await resolveQueuedFilePath(item, "pdf");
+    if (!item.path && pdfPath) cleanupPaths.push(pdfPath);
+    return { path: pdfPath, cleanupPaths, kind: "pdf" };
+  } catch (error) {
+    if (cleanupPaths.length > 0) {
+      await window.api.deleteTempPaths(cleanupPaths).catch(() => {});
+    }
+    throw error;
+  }
 }
 
 async function queueProtect() {
@@ -3615,6 +5022,9 @@ function exposeAutomatedTestApi() {
     queueProtect,
     queueUnlock,
     queueRedact,
+    handleOcrFiles,
+    queueOcr,
+    ocrAreaExtractor,
     handleSplitFile,
     handleCompressFile,
     renderMergeFileList,

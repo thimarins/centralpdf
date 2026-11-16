@@ -7,7 +7,7 @@ const { PDFDocument } = require('pdf-lib');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REPORTS_DIR = path.join(ROOT, 'reports');
-const TEST_ASSETS_DIR = path.join(ROOT, 'test-assets');
+const TEST_ASSETS_DIR = path.resolve(process.env.CENTRAL_PDF_TEST_ASSETS_DIR || path.join(ROOT, 'test-assets'));
 const GENERATED_ASSETS_DIR = path.join(TEST_ASSETS_DIR, 'generated');
 const TEMP_ROOT = path.join(ROOT, '.tmp-test-runs');
 

@@ -17,7 +17,7 @@ async function runImageToPdfConversion(payload, updateProgress, isCancelled) {
     totalItems: payload.files.length,
     currentItemName: ''
   });
-  return convertImagesToPdf(payload.files, outPath, updateProgress, isCancelled);
+  return convertImagesToPdf(payload.files, outPath, updateProgress, isCancelled, payload.options);
 }
 
 module.exports = {

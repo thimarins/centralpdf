@@ -9,12 +9,13 @@ const {
   PDFString,
   PDFHexString,
   PDFArray,
-  PDFDict,
   PDFRef
 } = require('pdf-lib');
 const { encryptPDF } = require('@pdfsmaller/pdf-encrypt');
 const { decryptPDF, isEncrypted } = require('@pdfsmaller/pdf-decrypt');
-const { isValidPdfPath, isValidImagePath, parsePageRanges, sanitizeFilename, inspectPdfFile, hasPdfEncryptionDictionary, resolveUniqueOutputPath, PDF_LIMITS, IMAGE_LIMITS } = require('./utils');
+const { isValidPdfPath, isValidImagePath, parsePageRanges, sanitizeFilename, inspectPdfFile, resolveUniqueOutputPath, PDF_LIMITS, IMAGE_LIMITS } = require('./utils');
+const { AUTO_IMAGE_MAX_DIMENSION, AUTO_JPEG_QUALITY, normalizeQuarterTurn } = require('./image-processing');
+const { getSafeFailureCode } = require('./document-privacy');
 
 const FONT_MAP = {
   Helvetica: StandardFonts.Helvetica,
@@ -25,8 +26,6 @@ const FONT_MAP = {
   CourierBold: StandardFonts.CourierBold
 };
 
-const AUTO_IMAGE_MAX_DIMENSION = 2200;
-const AUTO_JPEG_QUALITY = 82;
 const MIN_JPEG_OPTIMIZATION_BYTES = 180 * 1024;
 const MIN_JPEG_REDUCTION_RATIO = 0.97;
 const AGGRESSIVE_COMPRESSION_MIN_BYTES = 8 * 1024 * 1024;
@@ -113,7 +112,7 @@ function readOutline(pdfDoc) {
 
     return nodes.length > 0 ? nodes : null;
   } catch (err) {
-    console.warn('Failed to parse outline:', err);
+    console.warn(`PDF outline parsing skipped (${getSafeFailureCode(err)}).`);
     return null;
   }
 }
@@ -174,7 +173,7 @@ function writeOutline(pdfDoc, outlineNodes) {
     context.assign(outlinesRef, outlinesDict);
     pdfDoc.catalog.set(PDFName.of('Outlines'), outlinesRef);
   } catch (err) {
-    console.warn('Failed to write outline:', err);
+    console.warn(`PDF outline writing skipped (${getSafeFailureCode(err)}).`);
   }
 }
 
@@ -210,22 +209,32 @@ async function readPdfBuffer(filePath, isCancelled = () => false) {
   }
 }
 
-function hasDigitalSignatures(filePath) {
+async function hasDigitalSignatures(filePath) {
+  let handle;
   try {
-    const header = fs.openSync(filePath, 'r');
-    const stats = fs.statSync(filePath);
-    const readSize = Math.min(stats.size, 256 * 1024);
-    const buffer = Buffer.alloc(readSize);
-    fs.readSync(header, buffer, 0, readSize, 0);
-    fs.closeSync(header);
-    return [
-      Buffer.from('/Type /Sig'),
-      Buffer.from('/Type/Sig'),
-      Buffer.from('/FT /Sig'),
-      Buffer.from('/FT/Sig')
-    ].some((pattern) => buffer.includes(pattern));
-  } catch (err) {
+    if (!/\.pdf$/i.test(String(filePath || ''))) return false;
+    handle = await fs.promises.open(filePath, 'r');
+    const { size } = await handle.stat();
+    const chunkSize = 256 * 1024;
+    const overlapSize = 64;
+    const chunk = Buffer.allocUnsafe(chunkSize);
+    let position = 0;
+    let overlap = Buffer.alloc(0);
+    while (position < size) {
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunkSize, size - position), position);
+      if (!bytesRead) break;
+      const data = overlap.length
+        ? Buffer.concat([overlap, chunk.subarray(0, bytesRead)])
+        : chunk.subarray(0, bytesRead);
+      if (/\/(?:Type|FT)\s*\/Sig\b/.test(data.toString('latin1'))) return true;
+      overlap = data.subarray(Math.max(0, data.length - overlapSize));
+      position += bytesRead;
+    }
     return false;
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => {});
   }
 }
 
@@ -258,16 +267,50 @@ function buildTempOutputPath(outputPath) {
   return path.join(parsed.dir, `.${parsed.name}.${process.pid}.${Date.now()}.tmp`);
 }
 
-async function commitFileAtomically(tempPath, outputPath) {
+async function removeEmptyReservedOutput(outputPath) {
   try {
-    await fs.promises.rename(tempPath, outputPath);
-  } catch (err) {
-    if (err && err.code === 'EEXIST') {
-      await fs.promises.unlink(outputPath).catch(() => {});
+    const stats = await fs.promises.lstat(outputPath);
+    if (!stats.isFile() || stats.size !== 0) return false;
+    await fs.promises.unlink(outputPath);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return true;
+    return false;
+  }
+}
+
+async function commitFileAtomically(tempPath, outputPath) {
+  const windowsLockCodes = new Set(['EPERM', 'EBUSY']);
+  const retryDelays = [40, 80, 160, 320];
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
       await fs.promises.rename(tempPath, outputPath);
       return;
+    } catch (error) {
+      if (error?.code === 'EEXIST') {
+        // Output paths are claimed as empty files by resolveUniqueOutputPath.
+        // Never remove a non-empty file that another process may have placed there.
+        if (await removeEmptyReservedOutput(outputPath)) {
+          await fs.promises.rename(tempPath, outputPath);
+          return;
+        }
+        throw error;
+      }
+      if (process.platform === 'win32' && windowsLockCodes.has(error?.code)) {
+        if (attempt < retryDelays.length) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+          continue;
+        }
+        // Windows scanners/indexers can briefly hold the zero-byte reservation.
+        // After bounded retries, replace only that empty placeholder; user data is
+        // never deleted as a fallback, and the validated temp remains the source.
+        if (await removeEmptyReservedOutput(outputPath)) {
+          await fs.promises.rename(tempPath, outputPath);
+          return;
+        }
+      }
+      throw error;
     }
-    throw err;
   }
 }
 
@@ -376,7 +419,7 @@ async function serializePdfForOutput(pdfDoc, isCancelled = () => false) {
   try {
     await optimizeEmbeddedJpegImages(pdfDoc, isCancelled);
   } catch (error) {
-    console.warn('Embedded image optimization skipped:', error);
+    console.warn(`Embedded image optimization skipped (${getSafeFailureCode(error)}).`);
   }
 
   ensureNotCancelled(isCancelled);
@@ -477,7 +520,7 @@ async function maybeApplyAggressiveCompression(outputPath, isCancelled = () => f
   try {
     optimizedBytes = await rasterizePdfToOptimizedBytes(outputPath, isCancelled);
   } catch (error) {
-    console.warn('Aggressive PDF compression skipped:', error);
+    console.warn(`Aggressive PDF compression skipped (${getSafeFailureCode(error)}).`);
     return;
   }
 
@@ -544,7 +587,7 @@ async function loadWatermarkAsset(imagePath) {
       }
       return pngBuffer;
     } catch (err) {
-      throw new Error(`A imagem SVG não pôde ser processada neste ambiente: ${err.message}`);
+      throw new Error(`A imagem SVG não pôde ser processada neste ambiente: ${err.message}`, { cause: err });
     }
   }
 
@@ -594,52 +637,57 @@ async function mergePdfs(inputPaths, outputPath, options = {}, isCancelled = () 
   for (let index = 0; index < inputPaths.length; index += 1) {
     ensureNotCancelled(isCancelled);
     const inputPath = inputPaths[index];
-    const pdf = await PDFDocument.load(await readPdfBuffer(inputPath, isCancelled));
-    
-    let pageIndices = pdf.getPageIndices();
-    const rangeStr = ranges[index];
-    if (rangeStr && typeof rangeStr === 'string' && rangeStr.trim() !== '') {
-      pageIndices = parsePageRanges(rangeStr.trim(), pdf.getPageCount());
-      if (pageIndices.length === 0) {
-        throw new Error('O intervalo informado não contém páginas válidas.');
-      }
-    }
+    // Keep each source document scoped to one iteration. This is important for
+    // large batches because pdf-lib retains the destination document, but the
+    // source parser can become collectible after its pages are copied.
+    {
+      const pdf = await PDFDocument.load(await readPdfBuffer(inputPath, isCancelled));
 
-    const mergedPageIndexOffset = mergedPdf.getPageCount();
-    const sourceOutline = readOutline(pdf);
-    if (sourceOutline) {
-      function remapNodes(nodes) {
-        const remapped = [];
-        nodes.forEach((node) => {
-          let newPageIndex = -1;
-          if (node.pageIndex >= 0) {
-            const idxInCopied = pageIndices.indexOf(node.pageIndex);
-            if (idxInCopied !== -1) {
-              newPageIndex = mergedPageIndexOffset + idxInCopied;
+      let pageIndices = pdf.getPageIndices();
+      const rangeStr = ranges[index];
+      if (rangeStr && typeof rangeStr === 'string' && rangeStr.trim() !== '') {
+        pageIndices = parsePageRanges(rangeStr.trim(), pdf.getPageCount());
+        if (pageIndices.length === 0) {
+          throw new Error('O intervalo informado não contém páginas válidas.');
+        }
+      }
+
+      const mergedPageIndexOffset = mergedPdf.getPageCount();
+      const sourceOutline = readOutline(pdf);
+      if (sourceOutline) {
+        function remapNodes(nodes) {
+          const remapped = [];
+          nodes.forEach((node) => {
+            let newPageIndex = -1;
+            if (node.pageIndex >= 0) {
+              const idxInCopied = pageIndices.indexOf(node.pageIndex);
+              if (idxInCopied !== -1) {
+                newPageIndex = mergedPageIndexOffset + idxInCopied;
+              }
             }
-          }
 
-          const newChildren = node.children ? remapNodes(node.children) : [];
+            const newChildren = node.children ? remapNodes(node.children) : [];
 
-          if (newPageIndex !== -1 || newChildren.length > 0) {
-            remapped.push({
-              title: node.title,
-              pageIndex: newPageIndex,
-              children: newChildren
-            });
-          }
-        });
-        return remapped;
+            if (newPageIndex !== -1 || newChildren.length > 0) {
+              remapped.push({
+                title: node.title,
+                pageIndex: newPageIndex,
+                children: newChildren
+              });
+            }
+          });
+          return remapped;
+        }
+
+        const remappedOutline = remapNodes(sourceOutline);
+        if (remappedOutline.length > 0) {
+          combinedOutlines.push(...remappedOutline);
+        }
       }
 
-      const remappedOutline = remapNodes(sourceOutline);
-      if (remappedOutline.length > 0) {
-        combinedOutlines.push(...remappedOutline);
-      }
+      const pages = await mergedPdf.copyPages(pdf, pageIndices);
+      pages.forEach((page) => mergedPdf.addPage(page));
     }
-
-    const pages = await mergedPdf.copyPages(pdf, pageIndices);
-    pages.forEach((page) => mergedPdf.addPage(page));
     updateProgress({
       progress: Math.min(95, Math.round(((index + 1) / inputPaths.length) * 95)),
       itemProgress: Math.round(((index + 1) / inputPaths.length) * 100),
@@ -647,6 +695,11 @@ async function mergePdfs(inputPaths, outputPath, options = {}, isCancelled = () 
       totalItems: inputPaths.length,
       currentItemName: path.basename(inputPath)
     });
+    // Let cancellation, progress IPC and the worker event loop run between
+    // chunks. Without this, a large merge can appear frozen on Windows.
+    if ((index + 1) % 4 === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   if (combinedOutlines.length > 0) {
@@ -664,9 +717,6 @@ async function splitPdfByPages(inputPath, outputDir, prefix = 'page', isCancelle
   const sourcePdf = await PDFDocument.load(await readPdfBuffer(inputPath, isCancelled));
   const pageCount = sourcePdf.getPageCount();
   const createdFiles = [];
-  const warnings = [];
-  let skippedProtectedCount = 0;
-
   for (let i = 0; i < pageCount; i += 1) {
     ensureNotCancelled(isCancelled);
     const newPdf = await PDFDocument.create();
@@ -696,6 +746,40 @@ async function splitPdfByRanges(inputPath, rangeStr, outputPath, isCancelled = (
   copiedPages.forEach((page) => newPdf.addPage(page));
   ensureNotCancelled(isCancelled);
   await saveAndValidatePdf(newPdf, outputPath, isCancelled);
+}
+
+async function splitPdfByPageStarts(inputPath, requestedStartPages, outputDir, prefix = 'separado', isCancelled = () => false, updateProgress = () => {}) {
+  if (!isValidPdfPath(inputPath)) throw new Error('Não foi possível abrir este PDF para processamento.');
+  const sourcePdf = await PDFDocument.load(await readPdfBuffer(inputPath, isCancelled));
+  const pageCount = sourcePdf.getPageCount();
+  if (!Array.isArray(requestedStartPages) || requestedStartPages.length > 199
+    || requestedStartPages.some((page) => !Number.isSafeInteger(page) || page < 1 || page > pageCount)) {
+    throw new Error(`Os pontos de separação são inválidos. Escolha páginas entre 1 e ${pageCount}, com até 199 divisões.`);
+  }
+  const startPages = [...new Set([1, ...requestedStartPages])].sort((left, right) => left - right);
+  if (startPages.length < 2) throw new Error('Selecione pelo menos uma página, além da primeira, para iniciar uma nova parte.');
+
+  const createdFiles = [];
+  try {
+    for (let index = 0; index < startPages.length; index += 1) {
+      ensureNotCancelled(isCancelled);
+      const firstPage = startPages[index];
+      const lastPage = (startPages[index + 1] || (pageCount + 1)) - 1;
+      if (lastPage < firstPage) throw new Error('Os pontos de separação criariam uma parte vazia. Revise as páginas selecionadas.');
+      const pageIndices = Array.from({ length: lastPage - firstPage + 1 }, (_, offset) => firstPage - 1 + offset);
+      const part = await PDFDocument.create();
+      const copiedPages = await part.copyPages(sourcePdf, pageIndices);
+      copiedPages.forEach((page) => part.addPage(page));
+      const outputPath = resolveUniqueOutputPath(path.join(outputDir, `${prefix}_${String(index + 1).padStart(3, '0')}.pdf`));
+      await saveAndValidatePdf(part, outputPath, isCancelled);
+      createdFiles.push(outputPath);
+      updatePagedProgress(updateProgress, index, startPages.length, 5, 95, { currentItemName: `Parte ${index + 1} de ${startPages.length}` });
+    }
+    return createdFiles;
+  } catch (error) {
+    await Promise.all(createdFiles.map((filePath) => fs.promises.unlink(filePath).catch(() => {})));
+    throw error;
+  }
 }
 
 async function splitPdfBySize(inputPath, outputDir, maxSizeBytes, prefix = 'part', isCancelled = () => false, updateProgress = () => {}) {
@@ -794,10 +878,9 @@ async function organizePdf(inputPaths, pageActions, outputPath, options = {}, is
     }
 
     const [copiedPage] = await newPdf.copyPages(sourcePdf, [srcIdx]);
-    const rotation = action.rotation || 0;
-    if ([0, 90, 180, 270].includes(rotation)) {
-      copiedPage.setRotation(degrees(rotation));
-    }
+    const rotationDelta = normalizeQuarterTurn(action.rotation);
+    const existingRotation = normalizeQuarterTurn(copiedPage.getRotation()?.angle || 0);
+    copiedPage.setRotation(degrees(normalizeQuarterTurn(existingRotation + rotationDelta)));
     newPdf.addPage(copiedPage);
     updatePagedProgress(finalUpdateProgress, index, pageActions.length, 15, 70);
   }
@@ -1124,6 +1207,14 @@ async function watermarkPdf(inputPath, outputPath, options, updateProgress = () 
     });
   }
 
+  const sourceRotation = normalizeQuarterTurn(options.sourceRotation);
+  if (sourceRotation) {
+    pages.forEach((page) => {
+      const existingRotation = normalizeQuarterTurn(page.getRotation()?.angle || 0);
+      page.setRotation(degrees(normalizeQuarterTurn(existingRotation + sourceRotation)));
+    });
+  }
+
   await saveAndValidatePdf(pdfDoc, outputPath, isCancelled);
 }
 
@@ -1148,6 +1239,7 @@ async function applyWatermarkBatch(inputPaths, outputDir, options, updateProgres
     const nextBaseProgress = Math.round(((itemIndex + 1) / totalItems) * 100);
 
     const isImage = /\.(jpg|jpeg|png)$/i.test(inputPath);
+    const sourceRotation = normalizeQuarterTurn(options.sourceRotations?.[itemIndex]);
     let pathToWatermark = inputPath;
     let tempPdfPath = null;
 
@@ -1161,10 +1253,12 @@ async function applyWatermarkBatch(inputPaths, outputDir, options, updateProgres
         const tempPdfName = `temp-watermark-image-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
         tempPdfPath = path.join(tempDir, tempPdfName);
         
-        await convertImagesToPdf([inputPath], tempPdfPath);
+        await convertImagesToPdf([inputPath], tempPdfPath, () => {}, isCancelled, {
+          sourceRotations: [sourceRotation]
+        });
         pathToWatermark = tempPdfPath;
       } catch (err) {
-        throw new Error(`Não foi possível converter a imagem ${itemName} para PDF: ${err.message}`);
+        throw new Error(`Não foi possível converter a imagem ${itemName} para PDF: ${err.message}`, { cause: err });
       }
     }
 
@@ -1173,7 +1267,10 @@ async function applyWatermarkBatch(inputPaths, outputDir, options, updateProgres
         await watermarkPdf(
           pathToWatermark,
           outputPath,
-          options,
+          {
+            ...options,
+            sourceRotation: isImage ? 0 : sourceRotation
+          },
           updateProgress,
           isCancelled,
           {
@@ -1191,7 +1288,7 @@ async function applyWatermarkBatch(inputPaths, outputDir, options, updateProgres
             skippedProtectedCount += 1;
             continue;
           }
-          throw new Error('Arquivo protegido. Remova a senha para continuar.');
+          throw new Error('Arquivo protegido. Remova a senha para continuar.', { cause: error });
         }
         throw error;
       }
@@ -1199,6 +1296,9 @@ async function applyWatermarkBatch(inputPaths, outputDir, options, updateProgres
       if (tempPdfPath) {
         await fs.promises.unlink(tempPdfPath).catch(() => {});
       }
+    }
+    if ((itemIndex + 1) % 4 === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
     }
   }
 
@@ -1238,7 +1338,7 @@ async function encryptPdf(inputPath, outputPath, password, options = {}, isCance
     const pdfDoc = await PDFDocument.load(pdfBytes);
     bytesForEncryption = Buffer.from(await serializePdfForOutput(pdfDoc, isCancelled));
   } catch (error) {
-    console.warn('Pre-encryption optimization skipped:', error);
+    console.warn(`Pre-encryption optimization skipped (${getSafeFailureCode(error)}).`);
   }
 
   const encryptedBytes = await encryptPDF(new Uint8Array(bytesForEncryption), password, {
@@ -1298,7 +1398,7 @@ async function decryptPdf(inputPath, outputPath, password, isCancelled = () => f
     const normalized = message.toLowerCase();
 
     if (message === 'NOT_ENCRYPTED' || normalized.includes('not encrypted') || normalized.includes('not password protected')) {
-      throw new Error('Este PDF não tem senha.');
+      throw new Error('Este PDF não tem senha.', { cause: error });
     }
     if (
       normalized.includes('incorrect password') ||
@@ -1306,22 +1406,22 @@ async function decryptPdf(inputPath, outputPath, password, isCancelled = () => f
       normalized.includes('invalid password') ||
       normalized.includes('bad password')
     ) {
-      throw new Error('A senha informada está incorreta.');
+      throw new Error('A senha informada está incorreta.', { cause: error });
     }
     if (normalized.includes('unsupported encryption') || normalized.includes('unsupported security handler')) {
-      throw new Error('Este tipo de proteção ainda não é suportado pelo desbloqueio local.');
+      throw new Error('Este tipo de proteção ainda não é suportado pelo desbloqueio local.', { cause: error });
     }
     if (normalized.includes('failed to fetch') || normalized.includes('fetch')) {
-      throw new Error('O mecanismo local de desbloqueio não carregou corretamente. Reinicie o app e tente novamente.');
+      throw new Error('O mecanismo local de desbloqueio não carregou corretamente. Reinicie o app e tente novamente.', { cause: error });
     }
-    throw new Error('Não foi possível desbloquear o PDF. Verifique a senha ou a integridade do arquivo.');
+    throw new Error('Não foi possível desbloquear o PDF. Verifique a senha ou a integridade do arquivo.', { cause: error });
   }
 
   try {
     const normalizedDoc = await PDFDocument.load(decryptedBytes, { ignoreEncryption: true });
     decryptedBytes = await serializePdfForOutput(normalizedDoc, isCancelled);
   } catch (error) {
-    console.warn('Post-decryption optimization skipped:', error);
+    console.warn(`Post-decryption optimization skipped (${getSafeFailureCode(error)}).`);
   }
 
   ensureNotCancelled(isCancelled);
@@ -1358,7 +1458,19 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
   const sourcePdf = await PDFDocument.load(sourceBytes);
   const pageCount = sourcePdf.getPageCount();
 
-  const sourceOutline = readOutline(sourcePdf);
+  const redactedPageIndexes = new Set();
+  for (const item of options.redactedPages) {
+    if (!Number.isInteger(item?.pageIndex) || item.pageIndex < 0 || item.pageIndex >= pageCount) {
+      throw new Error('Uma das páginas selecionadas para ocultação não existe no documento.');
+    }
+    if (redactedPageIndexes.has(item.pageIndex)) {
+      throw new Error('A mesma página foi preparada mais de uma vez para ocultação. Gere a prévia novamente.');
+    }
+    if (typeof item.imagePath !== 'string' || !['.jpg', '.jpeg', '.png'].includes(path.extname(item.imagePath).toLowerCase())) {
+      throw new Error(`A imagem temporária da página ${item.pageIndex + 1} está inválida. Gere a prévia novamente.`);
+    }
+    redactedPageIndexes.add(item.pageIndex);
+  }
 
   const redactedMap = new Map();
   for (const item of options.redactedPages) {
@@ -1373,18 +1485,30 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
     if (redactedMap.has(i)) {
       const originalPage = sourcePdf.getPage(i);
       const { width, height } = originalPage.getSize();
-      const newPage = targetPdf.addPage([width, height]);
+      const originalRotation = normalizeQuarterTurn(originalPage.getRotation()?.angle || 0);
+      const swapsAxes = originalRotation === 90 || originalRotation === 270;
+      const visualWidth = swapsAxes ? height : width;
+      const visualHeight = swapsAxes ? width : height;
+      const newPage = targetPdf.addPage([visualWidth, visualHeight]);
 
       const imagePath = redactedMap.get(i);
-      const imgBytes = await fs.promises.readFile(imagePath);
-      const isPng = imagePath.toLowerCase().endsWith('.png');
-      const embeddedImage = isPng ? await targetPdf.embedPng(imgBytes) : await targetPdf.embedJpg(imgBytes);
+      if (!imagePath || typeof imagePath !== 'string') {
+        throw new Error(`Arquivo temporário da página ${i + 1} não foi encontrado.`);
+      }
+      let embeddedImage;
+      try {
+        const imgBytes = await fs.promises.readFile(imagePath);
+        const isPng = imagePath.toLowerCase().endsWith('.png');
+        embeddedImage = isPng ? await targetPdf.embedPng(imgBytes) : await targetPdf.embedJpg(imgBytes);
+      } catch (error) {
+        throw new Error(`Não foi possível aplicar a ocultação na página ${i + 1}. Gere a prévia novamente e tente outra vez.`, { cause: error });
+      }
 
       newPage.drawImage(embeddedImage, {
         x: 0,
         y: 0,
-        width,
-        height
+        width: visualWidth,
+        height: visualHeight
       });
 
       usedImagePaths.push(imagePath);
@@ -1396,9 +1520,8 @@ async function redactPdf(inputPath, outputPath, options = {}, isCancelled = () =
     updatePagedProgress(updateProgress, i, pageCount, 10, 80);
   }
 
-  if (sourceOutline) {
-    writeOutline(targetPdf, sourceOutline);
-  }
+  // Do not copy source bookmarks into a redacted output: their titles are
+  // independent text objects and can retain the very values the user covered.
 
   ensureNotCancelled(isCancelled);
   await saveAndValidatePdf(targetPdf, outputPath, isCancelled);
@@ -1414,6 +1537,7 @@ module.exports = {
   mergePdfs,
   splitPdfByPages,
   splitPdfByRanges,
+  splitPdfByPageStarts,
   splitPdfBySize,
   organizePdf,
   compressPdf,
@@ -1428,4 +1552,3 @@ module.exports = {
     ensureNotCancelled
   }
 };
-

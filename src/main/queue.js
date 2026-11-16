@@ -3,6 +3,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { APP_DEFAULTS, QUEUE_POLICY } = require('./constants');
 const logger = require('./logger');
+const { isPrivateDocumentOperation, createPrivateOperationFailureMetrics, getSafeFailureCode, getSafeDocumentOperationErrorMessage } = require('./document-privacy');
 
 class ProcessingQueue extends EventEmitter {
   constructor() {
@@ -147,6 +148,8 @@ class ProcessingQueue extends EventEmitter {
       throughputItemsPerMinute: 0,
       memoryMb: 0,
       cancelled: false,
+      cancellationRequested: false,
+      timeoutRequested: false,
       attempt: 1,
       maxAttempts: Math.max(1, (task.maxAttempts ?? this.options.retryCount + 1)),
       timeoutMs: task.timeoutMs || this.options.operationTimeoutMs,
@@ -176,8 +179,9 @@ class ProcessingQueue extends EventEmitter {
   cancel(taskId) {
     if (this.runningTasks.has(taskId)) {
       const task = this.runningTasks.get(taskId);
+      if (task.cancellationRequested || task.timeoutRequested) return true;
+      task.cancellationRequested = true;
       task.cancelled = true;
-      task.status = 'cancelled';
       task.execution.cancel?.('cancelled');
       this.schedulePersistState();
       this.emit('update', this.getQueueStatus());
@@ -188,6 +192,10 @@ class ProcessingQueue extends EventEmitter {
     if (index !== -1) {
       const [task] = this.queue.splice(index, 1);
       task.status = 'cancelled';
+      this.logOcrTerminal(task, 'cancelled');
+      Promise.resolve(task.onCancel?.()).catch((error) => {
+        logger.logMetric('QUEUE_CANCEL_CLEANUP_FAILED', { schemaVersion: 1, failureCode: getSafeFailureCode(error) });
+      });
       this.addRecentTerminalTask(task);
       this.schedulePersistState();
       this.emit('update', this.getQueueStatus());
@@ -195,6 +203,20 @@ class ProcessingQueue extends EventEmitter {
     }
 
     return false;
+  }
+
+  logOcrTerminal(task, status) {
+    if (task.type !== 'ocr') return;
+    const code = status === 'timeout' ? 'OPERATION_TIMEOUT' : 'OPERATION_CANCELLED';
+    const metrics = require('./services/ocr/ocr-telemetry').createOcrFailureMetrics({
+      taskId: task.id,
+      durationMs: task.elapsedMs,
+      attempt: task.attempt,
+      maxAttempts: task.maxAttempts,
+      status,
+      error: Object.assign(new Error(code), { code })
+    });
+    logger.logMetric('OCR_OPERATION_TERMINAL', metrics);
   }
 
   pump() {
@@ -243,22 +265,27 @@ class ProcessingQueue extends EventEmitter {
 
     task.execution = task.createExecution(progressHandler, () => task.cancelled);
     task.timeoutHandle = setTimeout(() => {
+      task.timeoutRequested = true;
       task.cancelled = true;
-      task.status = 'timeout';
       task.execution.cancel?.('timeout');
+      this.schedulePersistState();
+      this.emit('update', this.getQueueStatus());
     }, task.timeoutMs);
 
     task.execution.promise
       .then((result) => {
         task.finishedAt = Date.now();
         task.elapsedMs = task.finishedAt - task.startedAt;
-        if (task.status === 'timeout') {
+        if (task.timeoutRequested || task.status === 'timeout') {
+          task.status = 'timeout';
           task.error = 'A operação excedeu o tempo limite configurado.';
+          this.logOcrTerminal(task, 'timeout');
           this.emit('update', this.getQueueStatus());
           return;
         }
         if (task.cancelled) {
           task.status = 'cancelled';
+          this.logOcrTerminal(task, 'cancelled');
           this.emit('update', this.getQueueStatus());
           return;
         }
@@ -272,20 +299,45 @@ class ProcessingQueue extends EventEmitter {
         task.finishedAt = Date.now();
         task.elapsedMs = task.finishedAt - task.startedAt;
 
-        if (task.status === 'timeout' || error.message === 'OPERATION_TIMEOUT') {
+        if (task.timeoutRequested || task.status === 'timeout' || error.message === 'OPERATION_TIMEOUT') {
           task.status = 'timeout';
           task.error = 'A operação excedeu o tempo limite configurado.';
+          this.logOcrTerminal(task, 'timeout');
           this.emit('update', this.getQueueStatus());
           return;
         }
 
         if (task.cancelled || error.message === 'OPERATION_CANCELLED') {
           task.status = 'cancelled';
+          this.logOcrTerminal(task, 'cancelled');
           this.emit('update', this.getQueueStatus());
           return;
         }
 
-        task.error = error.message || String(error);
+        const privateDocumentOperation = task.privateDocumentOperation === true
+          || isPrivateDocumentOperation(task.type, task.options);
+        task.error = privateDocumentOperation
+          ? getSafeDocumentOperationErrorMessage(error, task.type)
+          : error.message || String(error);
+        if (privateDocumentOperation) {
+          const metrics = task.type === 'ocr'
+            ? require('./services/ocr/ocr-telemetry').createOcrFailureMetrics({
+              taskId: task.id,
+              durationMs: task.elapsedMs,
+              attempt: task.attempt,
+              maxAttempts: task.maxAttempts,
+              error
+            })
+            : createPrivateOperationFailureMetrics({
+              type: task.type,
+              taskId: task.id,
+              durationMs: task.elapsedMs,
+              attempt: task.attempt,
+              maxAttempts: task.maxAttempts,
+              error
+            });
+          logger.logMetric(task.type === 'ocr' ? 'OCR_ATTEMPT_FAILURE' : 'DOCUMENT_OPERATION_ATTEMPT_FAILURE', metrics);
+        }
         if (task.attempt < task.maxAttempts) {
           task.attempt += 1;
           task.status = 'pending';
@@ -306,6 +358,9 @@ class ProcessingQueue extends EventEmitter {
         }
 
         task.status = 'failed';
+        if (!privateDocumentOperation) {
+          logger.logError('QUEUE_OPERATION_FAILED', `${task.name || task.type || 'Operação'} [${task.id}]: ${error.stack || error.message || String(error)}`);
+        }
         this.emit('update', this.getQueueStatus());
       })
       .finally(() => {
@@ -367,6 +422,8 @@ class ProcessingQueue extends EventEmitter {
       etaSeconds: task.etaSeconds ?? null,
       throughputItemsPerMinute: task.throughputItemsPerMinute || 0,
       memoryMb: task.memoryMb || 0,
+      cancellationRequested: Boolean(task.cancellationRequested),
+      timeoutRequested: Boolean(task.timeoutRequested),
       attempt: task.attempt || 1,
       maxAttempts: task.maxAttempts || 1,
       result: task.result || null

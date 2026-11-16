@@ -1,4 +1,7 @@
-﻿import { normalizeBinaryData, downsampleImageAsBase64 as downsampleImageAsBase64Shared } from '../pdf-preview-utils.js';
+import { normalizeBinaryData, downsampleImageAsBase64 as downsampleImageAsBase64Shared } from '../pdf-preview-utils.js';
+import { addPulseTemporarily } from '../animations/motion.js';
+import { formatDocumentMeta } from '../document-info.js';
+import { normalizeOrganizeLoadReason } from './organize-errors.mjs';
 
 export function createOrganizeWorkspaceController(deps) {
   const {
@@ -11,16 +14,197 @@ export function createOrganizeWorkspaceController(deps) {
     showFeedbackBanner,
     buildFeedbackMessage,
     toneIcon,
-    formatBytes
+    formatBytes,
+    showCustomConfirmModal,
+    showCustomPromptModal
   } = deps;
 
   let organizeThumbnailPrefetchTimer = null;
   let organizeUiBindingsReady = false;
+  let organizeLoadToken = 0;
+  let organizeHadPendingChanges = false;
   let organizeHoldZoomState = null;
+  const organizeFailureLastLoggedAt = new Map();
+  let activeOrganizeSearchRequestId = '';
+  let currentOrganizeSearchJobId = '';
+  let organizeSearchCancelled = false;
   const organizeZoomRenderCache = new Map();
+  const organizeGridViews = ['small', 'medium', 'large'];
+  const organizeGridViewStorageKey = 'central-pdf.organize-grid-view';
+  let organizeGridView = 'auto';
+
+  function setOrganizeGridView(view, persist = true) {
+    organizeGridView = organizeGridViews.includes(view) ? view : 'auto';
+    const pageCount = state.organizePages?.length || 0;
+    const automaticView = pageCount <= 4
+      ? 'large'
+      : pageCount <= 12
+        ? 'medium'
+        : 'small';
+    const selectedView = organizeGridView === 'auto' ? automaticView : organizeGridView;
+    if (dom.organizeGrid) {
+      dom.organizeGrid.classList.remove(...organizeGridViews.map((size) => `pages-grid--${size}`));
+      dom.organizeGrid.classList.add(`pages-grid--${selectedView}`);
+      dom.organizeGrid.classList.toggle('pages-grid--auto', organizeGridView === 'auto');
+      if (organizeGridView === 'auto') {
+        const compactingProgress = Math.min(1, Math.max(0, (pageCount - 4) / 28));
+        dom.organizeGrid.style.setProperty('--organize-page-column-min', `${Math.round(260 - compactingProgress * 128)}px`);
+        dom.organizeGrid.style.setProperty('--organize-page-card-min-height', `${Math.round(340 - compactingProgress * 116)}px`);
+        dom.organizeGrid.style.setProperty('--organize-page-thumb-min-height', `${Math.round(244 - compactingProgress * 108)}px`);
+      } else {
+        dom.organizeGrid.style.removeProperty('--organize-page-column-min');
+        dom.organizeGrid.style.removeProperty('--organize-page-card-min-height');
+        dom.organizeGrid.style.removeProperty('--organize-page-thumb-min-height');
+      }
+    }
+    document.querySelectorAll('[data-organize-view]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.organizeView === selectedView));
+    });
+    if (persist) {
+      try {
+        window.localStorage.setItem(organizeGridViewStorageKey, organizeGridView);
+      } catch {
+        // The view control still works when browser storage is unavailable.
+      }
+    }
+  }
 
   if (!Array.isArray(state.organizeTempPaths)) {
     state.organizeTempPaths = [];
+  }
+
+  function getPrimaryOrganizeFile() {
+    return state.organizeFiles[0] || null;
+  }
+
+  function getPrimaryOrganizePdfDoc() {
+    return state.organizePdfDocs[0] || null;
+  }
+
+  function cancelOrganizeDocumentSearch({ invalidate = false } = {}) {
+    if (!activeOrganizeSearchRequestId) return;
+    window.api.cancelPdfTextSearch?.(currentOrganizeSearchJobId || activeOrganizeSearchRequestId);
+    organizeSearchCancelled = true;
+    if (invalidate) {
+      activeOrganizeSearchRequestId = '';
+      currentOrganizeSearchJobId = '';
+      const searchButton = document.getElementById('btn-organize-document-search');
+      const cancelButton = document.getElementById('btn-organize-document-search-cancel');
+      if (searchButton) searchButton.disabled = false;
+      cancelButton?.classList.add('hidden');
+      if (cancelButton) cancelButton.disabled = false;
+    } else {
+      const status = document.getElementById('organize-document-search-status');
+      if (status) status.textContent = 'Cancelando a pesquisa…';
+      const cancelButton = document.getElementById('btn-organize-document-search-cancel');
+      if (cancelButton) cancelButton.disabled = true;
+    }
+  }
+
+  async function searchOrganizeDocument() {
+    if (activeOrganizeSearchRequestId) return;
+    const input = document.getElementById('organize-document-search-input');
+    const status = document.getElementById('organize-document-search-status');
+    const resultsList = document.getElementById('organize-document-search-results');
+    const searchButton = document.getElementById('btn-organize-document-search');
+    const cancelButton = document.getElementById('btn-organize-document-search-cancel');
+    const query = String(input?.value || '').trim();
+    if (!query) {
+      if (status) { status.textContent = 'Digite uma palavra ou frase para localizar.'; status.dataset.tone = 'warning'; }
+      input?.focus();
+      return;
+    }
+    const sources = state.organizeFiles.map((file, fileIndex) => ({ file, fileIndex, document: state.organizePdfDocs[fileIndex] }))
+      .filter(({ file, document: pdfDocument }) => file?.path && pdfDocument);
+    if (!sources.length) {
+      if (status) { status.textContent = 'Adicione um documento para pesquisar.'; status.dataset.tone = 'warning'; }
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    const loadToken = organizeLoadToken;
+    activeOrganizeSearchRequestId = requestId;
+    organizeSearchCancelled = false;
+    if (searchButton) searchButton.disabled = true;
+    cancelButton?.classList.remove('hidden');
+    if (cancelButton) cancelButton.disabled = false;
+    if (resultsList) resultsList.replaceChildren();
+    if (status) { status.textContent = `Pesquisando em ${sources.length} arquivo(s) carregado(s)…`; status.dataset.tone = 'info'; }
+    const matches = [];
+    let scannedPages = 0;
+    let truncated = false;
+    try {
+      for (const { file, fileIndex } of sources) {
+        if (organizeSearchCancelled || loadToken !== organizeLoadToken || matches.length >= 200) break;
+        const itemRequestId = `${requestId}-${fileIndex}`;
+        currentOrganizeSearchJobId = itemRequestId;
+        const removeProgress = window.api.onOcrSearchProgress?.((payload) => {
+          if (payload?.requestId !== itemRequestId || activeOrganizeSearchRequestId !== requestId) return;
+          if (status) status.textContent = `Pesquisando ${file.name}: página ${payload.page || 0} de ${payload.totalPages || 0}…`;
+        });
+        try {
+          const result = await window.api.searchPdfText({ requestId: itemRequestId, filePath: file.path, query, language: 'por+eng' });
+          if (result?.cancelled) { organizeSearchCancelled = true; break; }
+          scannedPages += Number(result?.scannedPages) || 0;
+          if (result?.truncated || matches.length + (result?.matches?.length || 0) > 200) truncated = true;
+          for (const match of (Array.isArray(result?.matches) ? result.matches : [])) {
+            if (matches.length >= 200) { truncated = true; break; }
+            matches.push({ ...match, fileIndex, fileName: file.name });
+          }
+        } finally {
+          removeProgress?.();
+          if (currentOrganizeSearchJobId === itemRequestId) currentOrganizeSearchJobId = '';
+        }
+      }
+      if (activeOrganizeSearchRequestId !== requestId || loadToken !== organizeLoadToken) return;
+      if (organizeSearchCancelled) {
+        if (status) { status.textContent = 'Pesquisa cancelada. O documento continua sem alterações.'; status.dataset.tone = 'info'; }
+        return;
+      }
+      if (resultsList) {
+        matches.forEach((match) => {
+          const item = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'organize-document-search-result';
+          button.textContent = `${match.fileName} · página ${match.pageNumber} · ${match.source === 'OCR' ? 'texto reconhecido' : 'texto do PDF'}`;
+          button.addEventListener('click', () => {
+            const page = state.organizePages.find((candidate) => candidate.fileIndex === match.fileIndex && candidate.sourceIndex === match.pageNumber - 1);
+            const card = page && [...(dom.organizeGrid?.querySelectorAll('.page-card') || [])].find((candidate) => candidate.getAttribute('data-page-id') === page.id);
+            if (!card) {
+              if (status) { status.textContent = 'Essa página não está mais na organização atual. Pesquise novamente para atualizar os resultados.'; status.dataset.tone = 'warning'; }
+              return;
+            }
+            document.querySelectorAll('.page-card.is-search-result-focus').forEach((element) => element.classList.remove('is-search-result-focus'));
+            card.classList.add('is-search-result-focus');
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            window.setTimeout(() => card.classList.remove('is-search-result-focus'), 2600);
+          });
+          item.append(button);
+          resultsList.append(item);
+        });
+      }
+      if (status) {
+        status.textContent = matches.length
+          ? `${matches.length}${truncated ? '+' : ''} resultado(s) em ${scannedPages} página(s)${truncated ? '. Exibindo os primeiros 200.' : '.'}`
+          : `Nenhum resultado para “${query}” nas ${scannedPages} página(s) analisadas.`;
+        status.dataset.tone = matches.length ? 'success' : 'warning';
+      }
+    } catch (error) {
+      if (activeOrganizeSearchRequestId === requestId && status) {
+        status.textContent = `Não foi possível pesquisar os documentos: ${normalizeOrganizeLoadReason(error)}.`;
+        status.dataset.tone = 'error';
+        reportOrganizeFailure('ORGANIZE_DOCUMENT_SEARCH_FAILED');
+      }
+    } finally {
+      if (activeOrganizeSearchRequestId === requestId) {
+        activeOrganizeSearchRequestId = '';
+        currentOrganizeSearchJobId = '';
+        if (searchButton) searchButton.disabled = false;
+        cancelButton?.classList.add('hidden');
+        if (cancelButton) cancelButton.disabled = false;
+      }
+    }
   }
 
   function isOrganizeImageFile(file) {
@@ -31,6 +215,17 @@ export function createOrganizeWorkspaceController(deps) {
   function isOrganizePdfFile(file) {
     const name = String(file?.name || "").toLowerCase();
     return name.endsWith(".pdf");
+  }
+
+  function reportOrganizeFailure(failureCode) {
+    const now = Date.now();
+    if (now - (organizeFailureLastLoggedAt.get(failureCode) || 0) < 5000) return;
+    organizeFailureLastLoggedAt.set(failureCode, now);
+    window.api?.logRendererError?.({
+      scope: 'organize-workspace',
+      errorName: 'Error',
+      errorCode: failureCode
+    }).catch(() => {});
   }
 
   async function readFileAsBase64(fileObject) {
@@ -201,7 +396,7 @@ export function createOrganizeWorkspaceController(deps) {
 
         const nextPassword = await requestProtectedPdfPassword(fileName, invalidPassword);
         if (!nextPassword) {
-          throw new Error('PDF protegido sem senha informada.');
+          throw new Error('PDF protegido sem senha informada.', { cause: error });
         }
         password = nextPassword;
         invalidPassword = true;
@@ -269,7 +464,7 @@ export function createOrganizeWorkspaceController(deps) {
 
     const promise = (async () => {
       const fileIdx = page.fileIndex || 0;
-      const doc = state.organizePdfDocs ? state.organizePdfDocs[fileIdx] : state.organizePdfDoc;
+      const doc = state.organizePdfDocs[fileIdx];
       if (!doc) {
         return page.thumbnailDataUrl || '';
       }
@@ -333,12 +528,12 @@ export function createOrganizeWorkspaceController(deps) {
       if (status) {
         status.classList.add('hidden');
       }
-    } catch (error) {
+    } catch {
       if (!organizeHoldZoomState || organizeHoldZoomState.requestId !== requestId) return;
       if (status) {
         status.textContent = 'Não foi possível melhorar a visualização desta página.';
       }
-      console.warn('Organize zoom render failed:', error);
+      reportOrganizeFailure('ORGANIZE_ZOOM_RENDER_FAILED');
     }
   }
 
@@ -348,6 +543,7 @@ export function createOrganizeWorkspaceController(deps) {
 
     pageThumb.addEventListener('click', async (event) => {
       if (event.button !== undefined && event.button !== 0) return;
+      if (event.target.closest('.page-selection-control, [data-action]')) return;
       if (!page.thumbnailDataUrl) return;
       await showOrganizeHoldZoom(page);
     });
@@ -382,20 +578,63 @@ export function createOrganizeWorkspaceController(deps) {
     state.organizeTempPaths = [];
     try {
       await window.api.deleteTempPaths(paths);
-    } catch (error) {
-      console.warn('Failed to delete organize temporary paths:', error);
+    } catch {
+      reportOrganizeFailure('ORGANIZE_TEMP_CLEANUP_FAILED');
     }
+  }
+
+  const ORGANIZE_CONTEXTUAL_LABELS = {
+    'btn-organize-rotate-selected': 'Rotacionar',
+    'btn-organize-duplicate-selected': 'Duplicar',
+    'btn-organize-delete-selected': 'Excluir',
+    'btn-organize-extract-selected': 'Extrair Páginas',
+    'btn-organize-export-images': 'Exportar Imagem'
+  };
+
+  function updateOrganizeToolbarContext(count) {
+    const toolbarActions = document.getElementById('organize-toolbar-actions');
+    if (toolbarActions) {
+      toolbarActions.dataset.selection = count === 0 ? 'none' : (count === 1 ? 'single' : 'multi');
+    }
+
+    const suffix = count > 1 ? ` (${count})` : '';
+    Object.entries(ORGANIZE_CONTEXTUAL_LABELS).forEach(([buttonId, baseLabel]) => {
+      const button = document.getElementById(buttonId);
+      const labelSlot = button?.querySelector('span');
+      if (labelSlot) {
+        labelSlot.textContent = `${baseLabel}${suffix}`;
+      }
+      if (button) {
+        button.title = `${baseLabel}${suffix}`;
+        button.setAttribute('aria-label', `${baseLabel}${suffix}`);
+      }
+    });
   }
 
   function updateOrganizeMeta() {
     const fileMeta = document.getElementById('organize-file-meta');
     const selectionMeta = document.getElementById('organize-selection-meta');
+    const count = state.organizeSelection.size;
     if (fileMeta) {
-      fileMeta.textContent = `(${state.organizePages.length} páginas)`;
+      const primaryFile = state.organizeFiles?.[0];
+      fileMeta.textContent = formatDocumentMeta(formatBytes, {
+        name: primaryFile?.name,
+        size: primaryFile?.size,
+        pages: state.organizePages.length
+      });
     }
     if (selectionMeta) {
-      selectionMeta.textContent = `${state.organizeSelection.size} selecionadas`;
+      selectionMeta.textContent = count === 1 ? '1 selecionada' : `${count} selecionadas`;
     }
+    const selectAllButton = document.getElementById('btn-organize-select-all');
+    const clearSelectionButton = document.getElementById('btn-organize-clear-selection');
+    if (selectAllButton) {
+      selectAllButton.disabled = state.organizePages.length === 0 || count === state.organizePages.length;
+    }
+    if (clearSelectionButton) {
+      clearSelectionButton.disabled = count === 0;
+    }
+    updateOrganizeToolbarContext(count);
   }
 
   function buildPlaceholderCard() {
@@ -418,8 +657,8 @@ export function createOrganizeWorkspaceController(deps) {
     return state.organizePages.filter((page) => state.organizeSelection.has(page.id));
   }
 
-  function captureUndoState() {
-    state.organizeUndoStack.push({
+  function buildOrganizeSnapshot() {
+    return {
       pages: state.organizePages.map((page) => ({
         id: page.id,
         fileIndex: page.fileIndex,
@@ -432,26 +671,10 @@ export function createOrganizeWorkspaceController(deps) {
       bookmarks: JSON.parse(JSON.stringify(state.organizeBookmarks || [])),
       selection: [...state.organizeSelection],
       lastSelectedId: state.organizeLastSelectedId
-    });
-    if (state.organizeUndoStack.length > 12) {
-      state.organizeUndoStack.shift();
-    }
+    };
   }
 
-  function updateUndoButton() {
-    const button = document.getElementById("btn-organize-undo-action");
-    if (button) {
-      button.disabled = state.organizeUndoStack.length === 0;
-      button.title = state.organizeUndoStack.length === 0
-        ? "Nada para desfazer"
-        : "Desfaz a última alteração na organização";
-    }
-  }
-
-  function restoreUndoState() {
-    const snapshot = state.organizeUndoStack.pop();
-    if (!snapshot) return;
-
+  function applyOrganizeSnapshot(snapshot) {
     state.organizePages = snapshot.pages.map((page) => ({
       ...page,
       thumbnailDataUrl: "",
@@ -464,6 +687,77 @@ export function createOrganizeWorkspaceController(deps) {
     state.organizeRenderedPageIds = [];
     state.organizeDrag = { ids: [], sourceId: null, placeholderIndex: null };
     renderOrganizeGrid();
+  }
+
+  function captureUndoState() {
+    state.organizeUndoStack.push(buildOrganizeSnapshot());
+    if (state.organizeUndoStack.length > 12) {
+      state.organizeUndoStack.shift();
+    }
+    state.organizeRedoStack = [];
+  }
+
+  function updateUndoRedoButtons() {
+    const undoButton = document.getElementById("btn-organize-undo-action");
+    if (undoButton) {
+      undoButton.disabled = state.organizeUndoStack.length === 0;
+      undoButton.title = state.organizeUndoStack.length === 0
+        ? "Nada para desfazer"
+        : "Desfaz a última alteração na organização";
+    }
+
+    const redoButton = document.getElementById("btn-organize-redo-action");
+    if (redoButton) {
+      redoButton.disabled = !state.organizeRedoStack || state.organizeRedoStack.length === 0;
+      redoButton.title = redoButton.disabled
+        ? "Nada para refazer"
+        : "Refaz a última alteração desfeita";
+    }
+
+    updateOrganizeSaveButton();
+  }
+
+  function updateOrganizeSaveButton() {
+    const button = document.getElementById("btn-run-organize");
+    if (!button) return;
+
+    const pendingCount = state.organizeUndoStack.length;
+    const labelSlot = button.querySelector("span");
+    if (labelSlot) {
+      labelSlot.textContent = pendingCount > 0 ? `Salvar Alterações (${pendingCount})` : "Salvar Alterações";
+    }
+    button.classList.toggle("has-pending-changes", pendingCount > 0);
+
+    if (pendingCount > 0 && !organizeHadPendingChanges) {
+      addPulseTemporarily(button);
+    }
+    organizeHadPendingChanges = pendingCount > 0;
+  }
+
+  function restoreUndoState() {
+    const snapshot = state.organizeUndoStack.pop();
+    if (!snapshot) return;
+
+    if (!state.organizeRedoStack) state.organizeRedoStack = [];
+    state.organizeRedoStack.push(buildOrganizeSnapshot());
+    if (state.organizeRedoStack.length > 12) {
+      state.organizeRedoStack.shift();
+    }
+
+    applyOrganizeSnapshot(snapshot);
+  }
+
+  function redoOrganizeState() {
+    if (!state.organizeRedoStack || state.organizeRedoStack.length === 0) return;
+    const snapshot = state.organizeRedoStack.pop();
+    if (!snapshot) return;
+
+    state.organizeUndoStack.push(buildOrganizeSnapshot());
+    if (state.organizeUndoStack.length > 12) {
+      state.organizeUndoStack.shift();
+    }
+
+    applyOrganizeSnapshot(snapshot);
   }
 
   function selectSinglePageIfNeeded(pageId) {
@@ -497,6 +791,96 @@ export function createOrganizeWorkspaceController(deps) {
     }
 
     renderOrganizeGrid();
+  }
+
+  function togglePageSelection(pageId, event = {}) {
+    const currentIndex = state.organizePages.findIndex((item) => item.id === pageId);
+    if (currentIndex === -1) return;
+
+    if (event.shiftKey && state.organizeLastSelectedId) {
+      const lastIndex = state.organizePages.findIndex((item) => item.id === state.organizeLastSelectedId);
+      if (lastIndex !== -1) {
+        const [start, end] = [lastIndex, currentIndex].sort((a, b) => a - b);
+        state.organizeSelection = new Set(state.organizePages.slice(start, end + 1).map((item) => item.id));
+      }
+    } else if (state.organizeSelection.has(pageId)) {
+      state.organizeSelection.delete(pageId);
+    } else {
+      state.organizeSelection.add(pageId);
+    }
+
+    state.organizeLastSelectedId = pageId;
+    renderOrganizeGrid();
+  }
+
+  function selectAllOrganizePages() {
+    if (state.organizePages.length === 0) return;
+    state.organizeSelection = new Set(state.organizePages.map((page) => page.id));
+    state.organizeLastSelectedId = state.organizePages[state.organizePages.length - 1]?.id || null;
+    renderOrganizeGrid();
+  }
+
+  function clearOrganizeSelection() {
+    if (state.organizeSelection.size === 0) return;
+    state.organizeSelection.clear();
+    state.organizeLastSelectedId = null;
+    renderOrganizeGrid();
+  }
+
+  function getOrganizeContextMenuActions() {
+    const buttonIds = [
+      'btn-organize-rotate-selected',
+      'btn-organize-duplicate-selected',
+      'btn-organize-extract-selected',
+      'btn-organize-export-images',
+      'btn-organize-delete-selected'
+    ];
+    return buttonIds
+      .map((id) => document.getElementById(id))
+      .filter((button) => button && !button.disabled);
+  }
+
+  function closeOrganizeContextMenu() {
+    const menu = document.getElementById('organize-context-menu');
+    if (menu) menu.classList.add('hidden');
+  }
+
+  function openOrganizeContextMenu(pageId, clientX, clientY) {
+    const menu = document.getElementById('organize-context-menu');
+    if (!menu) return;
+
+    if (!state.organizeSelection.has(pageId)) {
+      state.organizeSelection = new Set([pageId]);
+      state.organizeLastSelectedId = pageId;
+      renderOrganizeGrid();
+    }
+
+    const actionButtons = getOrganizeContextMenuActions();
+    menu.innerHTML = '';
+
+    if (actionButtons.length === 0) {
+      menu.innerHTML = '<div class="command-palette-empty">Nenhuma ação disponível.</div>';
+    } else {
+      actionButtons.forEach((sourceButton) => {
+        const label = sourceButton.querySelector('span')?.textContent || sourceButton.textContent.trim();
+        const menuItem = document.createElement('button');
+        menuItem.type = 'button';
+        menuItem.className = 'command-palette-item';
+        menuItem.innerHTML = `${sourceButton.querySelector('svg')?.outerHTML || ''}<span>${label}</span>`;
+        menuItem.addEventListener('click', () => {
+          closeOrganizeContextMenu();
+          sourceButton.click();
+        });
+        menu.appendChild(menuItem);
+      });
+    }
+
+    menu.classList.remove('hidden');
+    const menuRect = menu.getBoundingClientRect();
+    const maxLeft = window.innerWidth - menuRect.width - 8;
+    const maxTop = window.innerHeight - menuRect.height - 8;
+    menu.style.left = `${Math.max(8, Math.min(clientX, maxLeft))}px`;
+    menu.style.top = `${Math.max(8, Math.min(clientY, maxTop))}px`;
   }
 
   function rotateSelectedPages() {
@@ -693,6 +1077,10 @@ export function createOrganizeWorkspaceController(deps) {
     card.innerHTML = `
       <div class="page-thumb">
         ${page.thumbnailDataUrl ? `<img src="${page.thumbnailDataUrl}" alt="Pré-visualização da página ${index + 1}">` : `<div class="page-thumb-loading">Miniatura sob demanda</div>`}
+        <label class="page-selection-control" title="${selected ? 'Remover página da seleção' : 'Selecionar página'}">
+          <input type="checkbox" data-action="toggle-selection" ${selected ? 'checked' : ''} aria-label="${selected ? 'Remover' : 'Adicionar'} página ${index + 1} da seleção">
+          <span aria-hidden="true"></span>
+        </label>
       </div>
       <div class="page-card-meta">
         <span class="page-index">Página ${index + 1}</span>
@@ -755,6 +1143,19 @@ export function createOrganizeWorkspaceController(deps) {
       event.stopPropagation();
       selectSinglePageIfNeeded(page.id);
       deleteSelectedPages();
+    });
+
+    const selectionControl = card.querySelector('.page-selection-control');
+    selectionControl.addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+    selectionControl.addEventListener('pointerdown', (event) => {
+      event.stopPropagation();
+    });
+
+    card.querySelector('[data-action="toggle-selection"]').addEventListener('click', (event) => {
+      event.stopPropagation();
+      togglePageSelection(page.id, event);
     });
 
     card.addEventListener('dragstart', (event) => handleOrganizeDragStart(event, page.id));
@@ -835,7 +1236,7 @@ export function createOrganizeWorkspaceController(deps) {
     const page = state.organizePages.find((item) => item.id === pageId);
     if (!page || page.renderStatus === 'rendering' || page.renderStatus === 'done') return;
     const fileIdx = page.fileIndex || 0;
-    const doc = state.organizePdfDocs ? state.organizePdfDocs[fileIdx] : state.organizePdfDoc;
+    const doc = state.organizePdfDocs[fileIdx];
     if (!doc) return;
 
     page.renderStatus = 'rendering';
@@ -846,8 +1247,8 @@ export function createOrganizeWorkspaceController(deps) {
       const context = canvas.getContext('2d');
       const renderCanvas = document.createElement('canvas');
       const renderContext = renderCanvas.getContext('2d');
-      if (!context) throw new Error('Unable to create thumbnail canvas context.');
-      if (!renderContext) throw new Error('Unable to create thumbnail render context.');
+      if (!context) throw new Error('Não foi possível preparar a miniatura da página.');
+      if (!renderContext) throw new Error('Não foi possível renderizar a miniatura da página.');
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -867,17 +1268,29 @@ export function createOrganizeWorkspaceController(deps) {
 
       const thumb = dom.organizeGrid.querySelector(`[data-page-id="${pageId}"] .page-thumb`);
       if (thumb) {
-        thumb.innerHTML = `<img src="${page.thumbnailDataUrl}" alt="Pré-visualização da página ${page.sourceIndex + 1}" style="${page.rotation ? `transform: rotate(${page.rotation}deg);` : ''}">`;
+        const image = document.createElement('img');
+        image.src = page.thumbnailDataUrl;
+        image.alt = `Pré-visualização da página ${page.sourceIndex + 1}`;
+        if (page.rotation) {
+          image.style.transform = `rotate(${page.rotation}deg)`;
+        }
+        const loading = thumb.querySelector('.page-thumb-loading');
+        if (loading) {
+          loading.replaceWith(image);
+        } else if (!thumb.querySelector('img')) {
+          thumb.prepend(image);
+        }
       }
 
       state.organizeRenderedPageIds.push(pageId);
-    } catch (error) {
-      console.warn('Thumbnail render failed:', error);
+    } catch {
+      reportOrganizeFailure('ORGANIZE_THUMBNAIL_RENDER_FAILED');
       page.renderStatus = 'idle';
     }
   }
 
   function renderOrganizeGrid() {
+    setOrganizeGridView(organizeGridView, false);
     if (state.organizePages.length === 0) {
       dom.organizeGrid.innerHTML = '<div class="empty-state">Nenhuma página restante. Selecione outro arquivo para continuar.</div>';
       updateOrganizeMeta();
@@ -914,7 +1327,7 @@ export function createOrganizeWorkspaceController(deps) {
     requestAnimationFrame(() => renderVisibleOrganizeThumbnails());
     scheduleOrganizeThumbnailPrefetch();
     renderBookmarksTree();
-    updateUndoButton();
+    updateUndoRedoButtons();
   }
 
   async function loadBookmarksFromDoc(doc, fileIndex) {
@@ -958,8 +1371,8 @@ export function createOrganizeWorkspaceController(deps) {
       }
 
       return await parseItems(outline);
-    } catch (err) {
-      console.warn("Failed to load outline:", err);
+    } catch {
+      reportOrganizeFailure('ORGANIZE_OUTLINE_LOAD_FAILED');
       return [];
     }
   }
@@ -1013,13 +1426,13 @@ export function createOrganizeWorkspaceController(deps) {
       const row = btn.closest('.bookmark-node-row');
       const id = row.getAttribute('data-id');
 
-      btn.addEventListener('click', () => {
-        handleBookmarkAction(action, id);
+      btn.addEventListener('click', async () => {
+        await handleBookmarkAction(action, id);
       });
     });
   }
 
-  function handleBookmarkAction(action, id) {
+  async function handleBookmarkAction(action, id) {
     function findNodeAndParent(nodes, targetId, parentList = null) {
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i].id === targetId) {
@@ -1042,7 +1455,10 @@ export function createOrganizeWorkspaceController(deps) {
       list.splice(index, 1);
       renderBookmarksTree();
     } else if (action === 'rename') {
-      const newTitle = prompt('Digite o novo nome do tópico:', node.title);
+      const newTitle = await showCustomPromptModal?.('Renomear tópico', 'Informe o novo nome para este tópico.', {
+        initialValue: node.title,
+        confirmLabel: 'Renomear'
+      });
       if (newTitle && newTitle.trim()) {
         node.title = newTitle.trim();
         renderBookmarksTree();
@@ -1061,7 +1477,9 @@ export function createOrganizeWorkspaceController(deps) {
       }
       renderBookmarksTree();
     } else if (action === 'add-child') {
-      const title = prompt('Digite o nome do sub-tópico:');
+      const title = await showCustomPromptModal?.('Novo sub-tópico', 'Informe o nome do sub-tópico.', {
+        confirmLabel: 'Adicionar'
+      });
       if (title && title.trim()) {
         if (!node.children) node.children = [];
         let activePageIndex = 0;
@@ -1094,6 +1512,7 @@ export function createOrganizeWorkspaceController(deps) {
   }
 
   async function handleOrganizeFile(file) {
+    const loadToken = ++organizeLoadToken;
     const isImage = isOrganizeImageFile(file);
     const isPdf = isOrganizePdfFile(file);
     if (!isImage && !isPdf) {
@@ -1104,19 +1523,21 @@ export function createOrganizeWorkspaceController(deps) {
     state.organizeTempPaths = [];
     organizeZoomRenderCache.clear();
     const sourcePath = isImage ? await convertImageToOrganizePdf(file) : await ensureOrganizePdfPath(file);
+    if (loadToken !== organizeLoadToken) return;
     const sourceFile = registerOrganizeSourceFile(file, sourcePath || file.path || '', isImage ? 'image' : 'pdf');
-    state.organizeFile = sourceFile;
     state.organizeFiles = [sourceFile];
     state.organizeLowMemoryMode = file.size >= (state.appConfig?.organizePreviewThresholdBytes || 200 * 1024 * 1024);
     state.organizeRenderedPageIds = [];
     state.organizeUndoStack = [];
+    state.organizeRedoStack = [];
+    organizeHadPendingChanges = false;
     state.organizeSelection.clear();
     state.organizeLastSelectedId = null;
     if (organizeThumbnailPrefetchTimer) {
       clearTimeout(organizeThumbnailPrefetchTimer);
       organizeThumbnailPrefetchTimer = null;
     }
-    updateUndoButton();
+    updateUndoRedoButtons();
     document.getElementById('organize-file-name').textContent = file.name;
     document.getElementById('organize-file-name').title = file.name;
     document.getElementById('organize-output-name').value = `${file.name.replace(/\.(pdf|jpg|jpeg|png)$/i, '')}_organizado.pdf`;
@@ -1149,11 +1570,15 @@ export function createOrganizeWorkspaceController(deps) {
         const arrayBuffer = (isImage || sourcePath)
           ? await window.api.readFileBytes(sourcePath)
           : await file.arrayBuffer();
-      state.organizePdfDoc = isPdf
+      const primaryPdfDoc = isPdf
         ? await loadProtectedAwarePdfDocument(file, arrayBuffer)
         : await pdfjsLib.getDocument({ data: normalizeBinaryData(arrayBuffer) }).promise;
-      state.organizePdfDocs = [state.organizePdfDoc];
-      state.organizePages = Array.from({ length: state.organizePdfDoc.numPages }, (_, index) => ({
+      if (loadToken !== organizeLoadToken) {
+        void Promise.resolve(primaryPdfDoc?.destroy?.()).catch(() => {});
+        return;
+      }
+      state.organizePdfDocs = [primaryPdfDoc];
+      state.organizePages = Array.from({ length: primaryPdfDoc.numPages }, (_, index) => ({
         id: `page_0_${index}_${Date.now()}`,
         fileIndex: 0,
         sourceIndex: index,
@@ -1163,12 +1588,13 @@ export function createOrganizeWorkspaceController(deps) {
         ,zoomPreviewDataUrl: ''
       }));
 
-      state.organizeBookmarks = await loadBookmarksFromDoc(state.organizePdfDoc, 0);
+      state.organizeBookmarks = await loadBookmarksFromDoc(primaryPdfDoc, 0);
 
       updateOrganizeMeta();
       renderOrganizeGrid();
     } catch (error) {
-      console.error("Error loading PDF in organize workspace:", error);
+      if (loadToken !== organizeLoadToken) return;
+      reportOrganizeFailure('ORGANIZE_PDF_LOAD_FAILED');
       if (String(error?.message || "").includes('PDF protegido sem senha informada.')) {
         clearOrganizeWorkspace();
         return;
@@ -1183,19 +1609,6 @@ export function createOrganizeWorkspaceController(deps) {
 
   async function addOrganizeFile(file, options = {}) {
     const silentNotifications = Boolean(options.silentNotifications);
-
-    if (!Array.isArray(state.organizeFiles)) {
-      state.organizeFiles = [];
-      if (state.organizeFile) {
-        state.organizeFiles.push(state.organizeFile);
-      }
-    }
-    if (!Array.isArray(state.organizePdfDocs)) {
-      state.organizePdfDocs = [];
-      if (state.organizePdfDoc) {
-        state.organizePdfDocs.push(state.organizePdfDoc);
-      }
-    }
 
     const isImage = isOrganizeImageFile(file);
     const isPdf = isOrganizePdfFile(file);
@@ -1220,11 +1633,9 @@ export function createOrganizeWorkspaceController(deps) {
     const toastId = `organize-add-${fileIndex}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const loadingDelayMs = Number.isFinite(options.loadingDelayMs) ? Math.max(0, options.loadingDelayMs) : 420;
     let loadingTimer = null;
-    let loadingShown = false;
 
     if (!silentNotifications) {
       loadingTimer = window.setTimeout(() => {
-        loadingShown = true;
         notify({
           id: toastId,
           tone: 'info',
@@ -1303,7 +1714,7 @@ export function createOrganizeWorkspaceController(deps) {
         doc
       };
     } catch (error) {
-      console.error("Error adding file in organize workspace:", error);
+      reportOrganizeFailure('ORGANIZE_FILE_ADD_FAILED');
       if (loadingTimer) {
         window.clearTimeout(loadingTimer);
       }
@@ -1332,7 +1743,7 @@ export function createOrganizeWorkspaceController(deps) {
           id: toastId,
           tone: 'error',
           title: isImage ? 'Adicionar imagem' : 'Adicionar PDF',
-          message: 'Falha ao carregar páginas do novo arquivo para organização.',
+          message: `${file.name}: ${normalizeOrganizeLoadReason(error)}.`,
           important: true,
           duration: 6200
         });
@@ -1348,21 +1759,36 @@ export function createOrganizeWorkspaceController(deps) {
   }
 
   async function addOrganizeFiles(files, options = {}) {
-    const acceptedFiles = [...(files || [])].filter((file) => isOrganizePdfFile(file) || isOrganizeImageFile(file));
+    let acceptedFiles = [...(files || [])].filter((file) => isOrganizePdfFile(file) || isOrganizeImageFile(file));
     if (acceptedFiles.length === 0) {
       notify({ tone: 'warning', title: 'Adicionar arquivo', message: 'Selecione um PDF ou uma imagem suportada.' });
       return { success: false, added: 0, failed: 0, totalPages: 0 };
     }
 
+    // If the first file of a batch fails, the remaining files must still be
+    // able to establish the workspace. Previously they were appended to an
+    // empty state while the dropzone stayed visible, producing contradictory
+    // error/success feedback without opening the editor.
+    if (state.organizePages.length === 0 && state.organizeFiles.length === 0) {
+      let initialized = false;
+      while (acceptedFiles.length > 0 && !initialized) {
+        const candidate = acceptedFiles.shift();
+        await handleOrganizeFile(candidate);
+        initialized = state.organizePages.length > 0;
+      }
+      if (!initialized) {
+        return { success: false, added: 0, failed: 0, totalPages: 0 };
+      }
+    }
+
     const batchId = `organize-batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const loadingDelayMs = Number.isFinite(options.loadingDelayMs) ? Math.max(0, options.loadingDelayMs) : 380;
-    const startedAt = Date.now();
-    let loadingShown = false;
     let loadingTimer = null;
     const summary = {
       success: true,
       added: 0,
       failed: 0,
+      failures: [],
       totalPages: 0,
       images: 0,
       pdfs: 0
@@ -1390,7 +1816,6 @@ export function createOrganizeWorkspaceController(deps) {
 
     if (!options.silentNotifications) {
       loadingTimer = window.setTimeout(() => {
-        loadingShown = true;
         notify({
           id: batchId,
           tone: 'info',
@@ -1413,6 +1838,12 @@ export function createOrganizeWorkspaceController(deps) {
       } else {
         summary.failed += 1;
         summary.success = false;
+        const rawReason = result.error?.message || String(result.error || 'não foi possível carregar o arquivo');
+        const reason = rawReason.length > 180 ? `${rawReason.slice(0, 177)}...` : rawReason;
+        summary.failures.push({
+          fileName: result.fileName || file.name,
+          reason
+        });
       }
     }
 
@@ -1421,22 +1852,31 @@ export function createOrganizeWorkspaceController(deps) {
     }
 
     if (!options.silentNotifications) {
-      const elapsedMs = Date.now() - startedAt;
       const tone = summary.failed > 0 ? 'warning' : 'success';
       const title = summary.failed > 0
-        ? 'Alguns arquivos não foram adicionados'
+        ? (summary.added > 0 ? 'Alguns arquivos não foram adicionados' : 'Nenhum arquivo foi adicionado')
         : (summary.added > 1 ? 'Arquivos adicionados' : 'Arquivo adicionado');
+      const groupedFailures = [...summary.failures.reduce((groups, failure) => {
+        const reason = normalizeOrganizeLoadReason(failure.reason);
+        const fileNames = groups.get(reason) || [];
+        fileNames.push(failure.fileName);
+        groups.set(reason, fileNames);
+        return groups;
+      }, new Map())].map(([reason, fileNames]) => ({ reason, fileNames }));
+      const visibleFailureGroups = groupedFailures.slice(0, 8);
+      const failureDetails = visibleFailureGroups
+        .map(({ fileNames, reason }) => `${fileNames.slice(0, 4).join(', ')}${fileNames.length > 4 ? ` e mais ${fileNames.length - 4}` : ''}: ${reason}`)
+        .join(' | ');
+      const remainingFailures = groupedFailures.length - visibleFailureGroups.length;
       const detail = summary.failed > 0
-        ? `${summary.added} de ${acceptedFiles.length} arquivos foram adicionados.`
+        ? `${summary.added} de ${acceptedFiles.length} arquivos foram adicionados. Problemas: ${failureDetails}${remainingFailures > 0 ? ` | e mais ${remainingFailures} arquivo(s)` : ''}`
         : formatBatchSummary();
 
       notify({
         id: batchId,
         tone,
         title,
-        message: elapsedMs < loadingDelayMs && !loadingShown
-          ? detail
-          : `${detail}${summary.failed > 0 ? ' Revise os itens com erro.' : ''}`,
+        message: detail,
         duration: 5200,
         important: summary.failed > 0
       });
@@ -1446,24 +1886,23 @@ export function createOrganizeWorkspaceController(deps) {
   }
 
   function clearOrganizeWorkspace() {
+    organizeLoadToken += 1;
+    cancelOrganizeDocumentSearch({ invalidate: true });
     cleanupOrganizeTempPaths();
     organizeZoomRenderCache.clear();
-    const organizeDocuments = [...new Set([
-      ...(Array.isArray(state.organizePdfDocs) ? state.organizePdfDocs : []),
-      state.organizePdfDoc
-    ].filter(Boolean))];
+    const organizeDocuments = [...new Set(state.organizePdfDocs.filter(Boolean))];
     organizeDocuments.forEach((doc) => {
       void Promise.resolve(doc.destroy?.()).catch(() => {});
     });
-    state.organizeFile = null;
-    state.organizePdfDoc = null;
-    state.organizeFiles = null;
-    state.organizePdfDocs = null;
+    state.organizeFiles = [];
+    state.organizePdfDocs = [];
     state.organizePages = [];
     state.organizeBookmarks = [];
     state.organizeRenderedPageIds = [];
     state.organizeLowMemoryMode = false;
     state.organizeUndoStack = [];
+    state.organizeRedoStack = [];
+    organizeHadPendingChanges = false;
     state.organizeSelection.clear();
     state.organizeLastSelectedId = null;
     state.organizeTempPaths = [];
@@ -1471,7 +1910,7 @@ export function createOrganizeWorkspaceController(deps) {
       clearTimeout(organizeThumbnailPrefetchTimer);
       organizeThumbnailPrefetchTimer = null;
     }
-    updateUndoButton();
+    updateUndoRedoButtons();
     handleOrganizeDragEnd();
     if (state.organizeObserver) {
       state.organizeObserver.disconnect();
@@ -1503,9 +1942,37 @@ export function createOrganizeWorkspaceController(deps) {
     }
   }
 
+  function setupOrganizeAdaptiveToolbar() {
+    const bar = document.querySelector('.organize-command-bar');
+    if (!bar) return;
+    bar.dataset.toolbarMode = 'compact';
+  }
+
   function bindOrganizeUiOnce() {
     if (organizeUiBindingsReady) return;
     organizeUiBindingsReady = true;
+
+    setupOrganizeAdaptiveToolbar();
+
+    let savedGridView = 'auto';
+    try {
+      savedGridView = window.localStorage.getItem(organizeGridViewStorageKey) || 'auto';
+    } catch {
+      // Keep the default size when browser storage is unavailable.
+    }
+    setOrganizeGridView(savedGridView, false);
+    document.querySelectorAll('[data-organize-view]').forEach((button) => {
+      button.addEventListener('click', () => setOrganizeGridView(button.dataset.organizeView));
+    });
+
+    const organizeSearchButton = document.getElementById('btn-organize-document-search');
+    const organizeSearchInput = document.getElementById('organize-document-search-input');
+    const organizeSearchCancel = document.getElementById('btn-organize-document-search-cancel');
+    organizeSearchButton?.addEventListener('click', searchOrganizeDocument);
+    organizeSearchInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); searchOrganizeDocument(); }
+    });
+    organizeSearchCancel?.addEventListener('click', () => cancelOrganizeDocumentSearch());
 
     const container = dom.organizeGrid?.closest(".pages-grid-container");
     if (container) {
@@ -1532,9 +1999,28 @@ export function createOrganizeWorkspaceController(deps) {
       };
     }
 
+    if (dom.organizeGrid) {
+      dom.organizeGrid.addEventListener('contextmenu', (event) => {
+        const card = event.target.closest('.page-card');
+        if (!card) return;
+        event.preventDefault();
+        const pageId = card.getAttribute('data-page-id');
+        if (pageId) openOrganizeContextMenu(pageId, event.clientX, event.clientY);
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      const menu = document.getElementById('organize-context-menu');
+      if (!menu || menu.classList.contains('hidden')) return;
+      if (!menu.contains(event.target)) closeOrganizeContextMenu();
+    });
+
     const btnAddRoot = document.getElementById('btn-bookmark-add-root');
     const btnClearAll = document.getElementById('btn-bookmark-clear-all');
     const btnUndoAction = document.getElementById('btn-organize-undo-action');
+    const btnRedoAction = document.getElementById('btn-organize-redo-action');
+    const btnSelectAll = document.getElementById('btn-organize-select-all');
+    const btnClearSelection = document.getElementById('btn-organize-clear-selection');
     const btnBookmarksToggle = document.getElementById('btn-organize-bookmarks-toggle');
     const btnBookmarksClose = document.getElementById('btn-organize-bookmarks-close');
 
@@ -1552,8 +2038,10 @@ export function createOrganizeWorkspaceController(deps) {
     }
 
     if (btnAddRoot) {
-      btnAddRoot.onclick = () => {
-        const title = prompt('Digite o nome do tópico principal:');
+      btnAddRoot.onclick = async () => {
+        const title = await showCustomPromptModal?.('Novo tópico principal', 'Informe o nome do tópico principal.', {
+          confirmLabel: 'Adicionar'
+        });
         if (!title || !title.trim()) return;
         let activePageIndex = 0;
         if (state.organizeSelection && state.organizeSelection.size > 0) {
@@ -1575,27 +2063,88 @@ export function createOrganizeWorkspaceController(deps) {
 
     if (btnClearAll) {
       btnClearAll.onclick = () => {
-        if (confirm('Deseja realmente limpar todo o sumário?')) {
-          state.organizeBookmarks = [];
-          renderBookmarksTree();
-        }
+        if (typeof showCustomConfirmModal !== 'function') return;
+        showCustomConfirmModal(
+          'Limpar sumário',
+          'Deseja realmente remover todos os tópicos do sumário deste documento?',
+          () => {
+            state.organizeBookmarks = [];
+            renderBookmarksTree();
+          },
+          undefined,
+          { confirmLabel: 'Limpar sumário', cancelLabel: 'Cancelar' }
+        );
       };
     }
 
     if (btnUndoAction) {
       btnUndoAction.onclick = restoreUndoState;
-      updateUndoButton();
     }
+    if (btnRedoAction) {
+      btnRedoAction.onclick = redoOrganizeState;
+    }
+    updateUndoRedoButtons();
+    if (btnSelectAll) {
+      btnSelectAll.onclick = selectAllOrganizePages;
+    }
+    if (btnClearSelection) {
+      btnClearSelection.onclick = clearOrganizeSelection;
+    }
+
+    document.addEventListener('keydown', (event) => {
+      const tab = document.getElementById('tab-organize');
+      if (!tab || !tab.classList.contains('active')) return;
+      if (!state.organizePages || state.organizePages.length === 0) return;
+
+      const target = event.target;
+      const isEditableTarget = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isEditableTarget) return;
+
+      if (event.key === 'Escape') {
+        closeOrganizeContextMenu();
+        return;
+      }
+
+      const ctrlOrCmd = event.ctrlKey || event.metaKey;
+      if (!ctrlOrCmd) return;
+
+      const key = event.key.toLowerCase();
+
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        redoOrganizeState();
+        return;
+      }
+
+      if (key === 'z') {
+        event.preventDefault();
+        restoreUndoState();
+        return;
+      }
+
+      if (key === 'y') {
+        event.preventDefault();
+        redoOrganizeState();
+        return;
+      }
+
+      if (key === 'a') {
+        event.preventDefault();
+        selectAllOrganizePages();
+      }
+    });
 
     const btnShowDetails = document.getElementById('btn-organize-show-details');
     const modalDetails = document.getElementById('document-details-modal');
     const modalDetailsClose = document.getElementById('document-details-btn-close');
     if (btnShowDetails && modalDetails && modalDetailsClose) {
       btnShowDetails.onclick = async () => {
-        if (!state.organizeFile) return;
+        const primaryFile = getPrimaryOrganizeFile();
+        const primaryPdfDoc = getPrimaryOrganizePdfDoc();
+        if (!primaryFile) return;
 
-        document.getElementById('detail-doc-name').textContent = state.organizeFile.name;
-        document.getElementById('detail-doc-size').textContent = formatBytes(state.organizeFile.size);
+        document.getElementById('detail-doc-name').textContent = primaryFile.name;
+        document.getElementById('detail-doc-size').textContent = formatBytes(primaryFile.size);
         document.getElementById('detail-doc-pages').textContent = state.organizePages.length;
 
         let author = 'Desconhecido';
@@ -1603,15 +2152,15 @@ export function createOrganizeWorkspaceController(deps) {
         let isEncrypted = 'Não';
 
         try {
-          if (state.organizePdfDoc) {
-            const metadata = await state.organizePdfDoc.getMetadata();
+          if (primaryPdfDoc) {
+            const metadata = await primaryPdfDoc.getMetadata();
             if (metadata && metadata.info) {
               author = metadata.info.Author || metadata.info.Creator || 'Desconhecido';
               created = metadata.info.CreationDate ? parsePdfDate(metadata.info.CreationDate) : 'Desconhecida';
             }
           }
-        } catch (error) {
-          console.warn('Failed to read metadata info:', error);
+        } catch {
+          reportOrganizeFailure('ORGANIZE_METADATA_READ_FAILED');
         }
 
         document.getElementById('detail-doc-author').textContent = author;
@@ -1652,13 +2201,20 @@ export function createOrganizeWorkspaceController(deps) {
           return;
         }
 
-        const cleanName = state.organizeFile.name.replace(/\.pdf$/i, '');
+        const primaryFile = getPrimaryOrganizeFile();
+        if (!primaryFile) return;
+        const cleanName = primaryFile.name.replace(/\.pdf$/i, '');
         const outputName = `${cleanName}_extraido.pdf`;
-        const organizeSources = Array.isArray(state.organizeFiles) && state.organizeFiles.length > 0
-          ? state.organizeFiles
-          : [state.organizeFile];
-        const filesArray = (await Promise.all(organizeSources.map((file) => ensureOrganizePdfPath(file))))
-          .filter((item) => typeof item === 'string' && item.trim());
+        const filesArray = [];
+        // Resolve paths sequentially so a large workspace does not create a
+        // burst of IPC/base64 work in the renderer.
+        for (const file of state.organizeFiles) {
+          const resolvedPath = await ensureOrganizePdfPath(file);
+          if (typeof resolvedPath === 'string' && resolvedPath.trim()) filesArray.push(resolvedPath);
+          if (filesArray.length % 4 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        }
 
         if (filesArray.length === 0) {
           notify({ tone: 'error', title: 'Extrair Páginas', message: 'Não foi possível preparar o arquivo de origem para extração.', important: true });
@@ -1705,7 +2261,7 @@ export function createOrganizeWorkspaceController(deps) {
           for (let idx = 0; idx < selectedPages.length; idx += 1) {
             const page = selectedPages[idx];
             const fileIdx = page.fileIndex || 0;
-            const doc = state.organizePdfDocs ? state.organizePdfDocs[fileIdx] : state.organizePdfDoc;
+            const doc = state.organizePdfDocs[fileIdx];
             if (!doc) continue;
 
             const pdfPage = await doc.getPage(page.sourceIndex + 1);
@@ -1722,7 +2278,7 @@ export function createOrganizeWorkspaceController(deps) {
             const base64Data = dataUrl.split(',')[1];
             exportList.push({
               base64Data,
-              name: `${state.organizeFile.name.replace(/\.pdf$/i, '')}_pagina_${page.sourceIndex + 1}.jpg`
+              name: `${getPrimaryOrganizeFile()?.name.replace(/\.pdf$/i, '') || 'pagina'}_pagina_${page.sourceIndex + 1}.jpg`
             });
           }
 
@@ -1730,7 +2286,8 @@ export function createOrganizeWorkspaceController(deps) {
           for (const item of exportList) {
             const savedPath = await window.api.saveTempFile({ base64Data: item.base64Data, extension: 'jpg' });
             if (savedPath) {
-              const sourcePath = state.organizeFile?.path || state.organizeFile?.fileObject?.path || '';
+              const primaryFile = getPrimaryOrganizeFile();
+              const sourcePath = primaryFile?.path || primaryFile?.fileObject?.path || '';
               const separatorIndex = Math.max(String(sourcePath).lastIndexOf('\\'), String(sourcePath).lastIndexOf('/'));
               const outputDir = separatorIndex > 0 ? String(sourcePath).slice(0, separatorIndex) : '';
               await window.api.moveTempFileToDest({ tempPath: savedPath, targetName: item.name, outputDir });
@@ -1739,8 +2296,8 @@ export function createOrganizeWorkspaceController(deps) {
           }
 
           notify({ tone: 'success', title: 'Exportar Imagem', message: `Exportadas ${successCount} páginas com sucesso.` });
-        } catch (error) {
-          console.error('Export images failed:', error);
+        } catch {
+          reportOrganizeFailure('ORGANIZE_PAGE_EXPORT_FAILED');
           notify({ tone: 'error', title: 'Exportar Imagem', message: 'Erro ao renderizar e salvar imagens das páginas.' });
         }
       };
@@ -1774,6 +2331,8 @@ export function createOrganizeWorkspaceController(deps) {
     rotateSelectedPages,
     duplicateSelectedPages,
     deleteSelectedPages,
+    selectAllOrganizePages,
+    clearOrganizeSelection,
     reverseOrganizeOrder,
     moveSelectedPages
   };

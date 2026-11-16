@@ -1,4 +1,4 @@
-import { fluentIcon, fluentToneIcon } from "../icons/fluent-icons.js";
+import { lucideIcon, lucideToneIcon } from "../icons/lucide-icons.js";
 
 function normalizeTone(tone) {
   if (["success", "warning", "error", "info"].includes(tone)) return tone;
@@ -110,10 +110,10 @@ export function createToastCenter(container) {
     element.style.setProperty("--toast-duration", `${Math.max(1200, Number(duration) || 4200)}ms`);
     element.innerHTML = `
       <div class="toast-accent" aria-hidden="true"></div>
-      <div class="toast-icon" aria-hidden="true">${fluentToneIcon(normalizeTone(tone), 18)}</div>
+      <div class="toast-icon" aria-hidden="true">${lucideToneIcon(normalizeTone(tone), 18)}</div>
       <div class="toast-body">
         <div class="toast-title-row">
-          ${isSpotlight ? `<span class="toast-title-icon" aria-hidden="true">${tone === "success" ? fluentIcon("success", { size: 18 }) : fluentToneIcon(normalizeTone(tone), 18)}</span>` : ""}
+          ${isSpotlight ? `<span class="toast-title-icon" aria-hidden="true">${tone === "success" ? lucideIcon("success", { size: 18 }) : lucideToneIcon(normalizeTone(tone), 18)}</span>` : ""}
           <strong class="toast-title"></strong>
         </div>
         <p class="toast-message"></p>
@@ -123,7 +123,7 @@ export function createToastCenter(container) {
             ? `<div class="toast-actions"></div>`
             : ""}
       </div>
-      <button class="toast-close" type="button" aria-label="Fechar aviso">${fluentIcon("x", { size: 16 })}</button>
+      <button class="toast-close" type="button" aria-label="Fechar aviso">${lucideIcon("x", { size: 16 })}</button>
     `;
 
     element.querySelector(".toast-title").textContent = title;
@@ -149,12 +149,12 @@ export function createToastCenter(container) {
           const actionButton = document.createElement("button");
           actionButton.className = "toast-action toast-action-card";
           actionButton.classList.add(index < 2 ? "toast-action-card-half" : "toast-action-card-full");
-          if (section.title === "ABRIR RESULTADO") {
+          if (section.title === "ABRIR RESULTADO" && action.primary === true) {
             actionButton.classList.add("toast-action-card-open-result");
           }
           actionButton.type = "button";
           actionButton.innerHTML = `
-            <span class="toast-action-icon" aria-hidden="true">${fluentIcon(action.icon || "arrow-right", { size: 16 })}</span>
+            <span class="toast-action-icon" aria-hidden="true">${lucideIcon(action.icon || "arrow-right", { size: 16 })}</span>
             <span class="toast-action-copy">
               <strong>${action.label}</strong>
               ${action.description ? `<small>${action.description}</small>` : ""}
@@ -186,7 +186,7 @@ export function createToastCenter(container) {
         actionButton.type = "button";
         if (isSpotlight) {
           actionButton.innerHTML = `
-            <span class="toast-action-icon" aria-hidden="true">${fluentIcon(action.icon || "arrow-right", { size: 16 })}</span>
+            <span class="toast-action-icon" aria-hidden="true">${lucideIcon(action.icon || "arrow-right", { size: 16 })}</span>
             <span class="toast-action-copy">
               <strong>${action.label}</strong>
               ${action.description ? `<small>${action.description}</small>` : ""}
@@ -207,7 +207,10 @@ export function createToastCenter(container) {
     }
     element.querySelector(".toast-close").addEventListener("click", () => clear(id, { immediate: true }));
 
-    mountTarget.appendChild(element);
+    // A mensagem mais recente deve ficar visualmente na frente da anterior.
+    // O toast-region usa flex-direction: column; prepend mantém a ordem temporal
+    // correta sem alterar o ciclo de vida ou o timer dos avisos já exibidos.
+    mountTarget.prepend(element);
 
     const timeoutId = window.setTimeout(() => clear(id), duration);
     activeToasts.set(id, { element, backdrop, timeoutId, closing: false, isSpotlight });

@@ -12,14 +12,12 @@ export function createAboutPanelController({
   toneIcon
 }) {
   const panel = document.getElementById("settings-about-panel");
-  const toggle = document.getElementById("btn-settings-about-toggle");
   const body = document.getElementById("settings-about-body");
   const systemSlot = document.getElementById("about-system-slot");
   const technologiesSlot = document.getElementById("about-technologies-list");
   const techToggle = document.getElementById("btn-about-tech-toggle");
   const techBody = document.getElementById("about-technologies-body");
-  const toggleMeta = toggle.querySelector(".about-toggle-meta");
-  const toggleChevron = toggle.querySelector(".about-toggle-chevron");
+  const toggleMeta = panel.querySelector(".about-toggle-meta");
   const techToggleChevron = techToggle.querySelector(".about-toggle-chevron");
   let aboutInfo = null;
 
@@ -34,17 +32,17 @@ export function createAboutPanelController({
       {
         name: "Motor PDF",
         iconName: "file",
-        description: "pdf-lib, pdfjs-dist, QPDF WASM e pdf-encrypt para manipulação, descriptografia e criptografia local."
+        description: "pdf-lib, pdfjs-dist, qpdf nativo 12.3.2 e pdf-encrypt para manipulação, mesclagem em lote, descriptografia e criptografia local."
       },
       {
         name: "Interface e ícones",
         iconName: "grid-2x2",
-        description: "Fluent UI Icons e CSS leve para uma interface limpa e corporativa."
+        description: "Lucide Icons e CSS leve para uma interface limpa e corporativa."
       },
       {
         name: "Empacotamento e suporte",
         iconName: "archive",
-        description: "electron-builder e logging interno para release, suporte e diagnóstico."
+        description: "electron-builder, logs rotativos sanitizados e licença Apache 2.0 do qpdf incluída na instalação."
       }
     ];
 
@@ -59,21 +57,8 @@ export function createAboutPanelController({
     `).join("");
   }
 
-  function setExpanded(expanded) {
-    panel.classList.toggle("expanded", expanded);
-    body.classList.toggle("hidden", !expanded);
-    toggle.setAttribute("aria-expanded", String(expanded));
-    toggle.setAttribute("title", expanded ? "Ocultar detalhes do aplicativo" : "Exibir detalhes do aplicativo");
-    if (toggleMeta) {
-      toggleMeta.textContent = `${aboutInfo.app.versionLabel || "v-"} • Build ${aboutInfo.app.buildLabel || "-"}`;
-    }
-    if (toggleChevron) {
-      toggleChevron.innerHTML = icon(expanded ? "chevronUp" : "chevronDown", { size: 16 });
-    }
-  }
-
   function setTechExpanded(expanded) {
-    techBody.classList.toggle("hidden", !expanded);
+    techBody.classList.toggle("about-collapsed", !expanded);
     techToggle.setAttribute("aria-expanded", String(expanded));
     if (techToggleChevron) {
       techToggleChevron.innerHTML = icon(expanded ? "chevronUp" : "chevronDown", { size: 16 });
@@ -93,6 +78,11 @@ export function createAboutPanelController({
     }
 
     renderTechnologies();
+    panel.classList.add("expanded");
+    body.classList.remove("about-collapsed");
+    if (toggleMeta) {
+      toggleMeta.textContent = `${aboutInfo.app.versionLabel || "v-"} • Build ${aboutInfo.app.buildLabel || "-"}`;
+    }
     if (!panel.dataset.aboutDiagnosticsBound) {
       bindAboutDiagnosticActions({
         container: panel,
@@ -106,16 +96,10 @@ export function createAboutPanelController({
         panel.dataset.aboutDiagnosticsBound = "true";
       }
     }
-    setExpanded(panel.classList.contains("expanded"));
     setTechExpanded(false);
   }
 
   function setup() {
-    toggle.addEventListener("click", () => {
-      const expanded = toggle.getAttribute("aria-expanded") === "true";
-      setExpanded(!expanded);
-    });
-
     techToggle.addEventListener("click", () => {
       const expanded = techToggle.getAttribute("aria-expanded") === "true";
       setTechExpanded(!expanded);
@@ -127,4 +111,3 @@ export function createAboutPanelController({
     render
   };
 }
-

@@ -1,5 +1,6 @@
+const fs = require('fs');
 const path = require('path');
-const { ROOT, toMarkdownTable, writeReport } = require('./_common');
+const { ROOT, runCommand, toMarkdownTable, writeReport } = require('./_common');
 const { runHealthCheck } = require('./health-check');
 const { runBuildCheck } = require('./run-build-check');
 
@@ -14,6 +15,29 @@ async function runReleaseCheck() {
   const healthStart = Date.now();
   const health = await runHealthCheck({ skipBuildMinimum: true });
   pushStep('health-check', health.ok, path.relative(ROOT, health.reportPath), Date.now() - healthStart);
+
+  const auditStart = Date.now();
+  const npmCliPath = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const dependencyAudit = process.platform === 'win32' && fs.existsSync(npmCliPath)
+    ? runCommand(process.execPath, [npmCliPath, 'audit', '--json'], { timeout: 2 * 60 * 1000 })
+    : runCommand('npm', ['audit', '--json'], { timeout: 2 * 60 * 1000 });
+  pushStep(
+    'dependency-audit',
+    dependencyAudit.ok,
+    dependencyAudit.ok ? 'npm audit sem vulnerabilidades conhecidas' : (dependencyAudit.stderr || dependencyAudit.stdout).trim(),
+    Date.now() - auditStart
+  );
+
+  const uiE2eStart = Date.now();
+  const uiE2e = runCommand(process.execPath, [path.join(ROOT, 'scripts', 'testing', 'run-ui-app-e2e.js')], {
+    timeout: 6 * 60 * 1000
+  });
+  pushStep(
+    'ui-app-e2e',
+    uiE2e.ok,
+    uiE2e.ok ? path.join('reports', 'ui-app-e2e-report.md') : (uiE2e.stderr || uiE2e.stdout).trim(),
+    Date.now() - uiE2eStart
+  );
 
   const buildStart = Date.now();
   const build = await runBuildCheck({ full: true });

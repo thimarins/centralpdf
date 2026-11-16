@@ -1,5 +1,6 @@
 ﻿const fs = require('fs');
 const path = require('path');
+const { EventEmitter } = require('events');
 const {
   assert,
   createTempDir,
@@ -7,6 +8,7 @@ const {
   writeReport
 } = require('./_common');
 const queue = require('../../src/main/queue');
+const { createPdfWorkerExecution, createWorkerExitError } = require('../../src/main/worker-runtime');
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,9 +55,9 @@ function makeTask(id, durationMs, options = {}) {
         cancel: (reason) => {
           if (timer) clearTimeout(timer);
           rejected = true;
-          if (rejectPromise) {
-            rejectPromise(new Error(reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'OPERATION_CANCELLED'));
-          }
+          const rejectCancellation = () => rejectPromise?.(new Error(reason === 'timeout' ? 'OPERATION_TIMEOUT' : 'OPERATION_CANCELLED'));
+          if (options.cancelDelayMs) setTimeout(rejectCancellation, options.cancelDelayMs);
+          else rejectCancellation();
         },
         promise: new Promise((resolve, reject) => {
           rejectPromise = reject;
@@ -63,7 +65,7 @@ function makeTask(id, durationMs, options = {}) {
           timer = setTimeout(() => {
             if (options.shouldFail && !options.hasFailedOnce) {
               options.hasFailedOnce = true;
-              reject(new Error(options.failMessage || 'simulated failure'));
+              reject(options.failError || new Error(options.failMessage || 'simulated failure'));
               return;
             }
             if (options.hang) {
@@ -91,6 +93,64 @@ async function runQueueTests() {
     results.push({ name, status, details });
   }
 
+  assert.strictEqual(createWorkerExitError(1, 'timeout').message, 'OPERATION_TIMEOUT');
+  assert.strictEqual(createWorkerExitError(1, 'cancelled').message, 'OPERATION_CANCELLED');
+  assert.match(createWorkerExitError(1).message, /exit code 1/);
+  record('worker cancellation classification', 'ok', 'encerramento forçado do worker mantém estados claros de cancelamento e timeout, sem mensagem técnica genérica');
+
+  class FakeOperationWorker extends EventEmitter {
+    terminated = false;
+    postMessage() {}
+    terminate() {
+      this.terminated = true;
+      return Promise.resolve(0);
+    }
+  }
+  let fakeWorker;
+  const workerExecution = createPdfWorkerExecution({}, () => {}, class extends FakeOperationWorker {
+    constructor(...args) {
+      super(...args);
+      fakeWorker = this;
+    }
+  });
+  fakeWorker.emit('message', { type: 'result', payload: { ok: true } });
+  assert.deepStrictEqual(await workerExecution.promise, { ok: true });
+  assert.strictEqual(fakeWorker.terminated, false, 'Worker concluído não deve ser encerrado antes da limpeza dos recursos nativos.');
+  record('native worker cleanup after result', 'ok', 'resultado libera a promessa sem terminar o worker antes da limpeza do bloco finally');
+
+  let safeErrorWorker;
+  const safeErrorExecution = createPdfWorkerExecution({}, () => {}, class extends FakeOperationWorker {
+    constructor(...args) {
+      super(...args);
+      safeErrorWorker = this;
+    }
+  });
+  safeErrorWorker.emit('message', { type: 'error', payload: {
+    message: 'PDF.js internal error C:\\private\\document.pdf',
+    safeUserMessage: 'Não foi possível pesquisar este PDF. Tente novamente.',
+    code: 'EIO',
+    stack: 'sensitive stack'
+  } });
+  await assert.rejects(safeErrorExecution.promise, (error) => {
+    assert.strictEqual(error.safeUserMessage, 'Não foi possível pesquisar este PDF. Tente novamente.');
+    assert.strictEqual(error.code, 'EIO');
+    assert.ok(error.message.includes('C:\\private\\document.pdf'), 'A mensagem técnica permanece apenas no objeto interno para diagnóstico local.');
+    return true;
+  });
+  record('worker forwards only structured safe OCR metadata', 'ok', 'a ponte preserva mensagem segura e código permitido para que a fila sanitize a falha sem perder classificação');
+
+  let exitedWorker;
+  const exitedWorkerExecution = createPdfWorkerExecution({}, () => {}, class extends FakeOperationWorker {
+    constructor(...args) {
+      super(...args);
+      exitedWorker = this;
+    }
+  });
+  exitedWorkerExecution.cancel('cancelled');
+  exitedWorker.emit('exit', 0);
+  await assert.rejects(exitedWorkerExecution.promise, (error) => error.message === 'OPERATION_CANCELLED');
+  record('zero-exit cancellation settles worker promise', 'ok', 'worker encerrado com código 0 após cancelamento rejeita explicitamente, sem deixar OCR/pesquisa presa');
+
   resetQueueState();
   queue.configure({
     concurrency: 1,
@@ -110,6 +170,29 @@ async function runQueueTests() {
   record('queue completion', 'ok', 'fila processa tarefa simples, preserva o tipo da operacao e mantem o estado concluido por curto periodo');
 
   resetQueueState();
+  queue.configure({ concurrency: 1, retryCount: 0, operationTimeoutMs: 1000, persistenceEnabled: false, persistencePath });
+  const ioFailureCases = [
+    ['ENOSPC', 'Não foi possível concluir o OCR porque não há espaço suficiente no disco. Libere espaço e tente novamente.'],
+    ['EACCES', 'Não foi possível acessar um arquivo ou salvar o resultado. Verifique as permissões e se o documento está aberto em outro programa.'],
+    ['EPERM', 'O Windows impediu o acesso a um arquivo ou o salvamento do resultado. Verifique as permissões e tente novamente.'],
+    ['EBUSY', 'Um arquivo ou pasta usado pelo OCR está em uso. Feche-o em outro programa e tente novamente.'],
+    ['ENOENT', 'Um arquivo de origem ou a pasta de saída não foi encontrado. Confira os arquivos e tente novamente.'],
+    ['EIO', 'Ocorreu uma falha ao ler ou salvar o documento. Verifique a unidade e tente novamente.']
+  ];
+  for (const [errorCode, expectedMessage] of ioFailureCases) {
+    const failureId = `io-failure-${errorCode.toLowerCase()}`;
+    const error = Object.assign(new Error(`${errorCode}: operating system diagnostic at C:\\Users\\Pessoa\\privado.pdf`), { code: errorCode });
+    queue.enqueue(makeTask(failureId, 10, { type: 'ocr', shouldFail: true, failError: error }));
+    await drainQueue();
+    const failedTask = queue.getQueueStatus().find((task) => task.id === failureId);
+    assert.ok(failedTask, `A falha ${errorCode} deve aparecer na fila.`);
+    assert.strictEqual(failedTask.status, 'failed', `A falha ${errorCode} não pode aparecer como sucesso.`);
+    assert.strictEqual(failedTask.error, expectedMessage, `A falha ${errorCode} deve usar mensagem segura e clara.`);
+    assert.ok(!failedTask.error.includes('C:\\Users\\Pessoa') && !failedTask.error.includes('operating system diagnostic'));
+  }
+  record('safe user-facing filesystem errors', 'ok', 'ENOSPC/EACCES/EPERM/EBUSY/ENOENT/EIO aparecem em português claro, sem caminho local ou texto técnico bruto');
+
+  resetQueueState();
   queue.configure({ concurrency: 1, retryCount: 1, operationTimeoutMs: 400, persistenceEnabled: true, persistencePath });
   const retryOptions = { shouldFail: true, hasFailedOnce: false, failMessage: 'transient failure' };
   queue.enqueue(makeTask('retry-task', 50, retryOptions));
@@ -120,16 +203,30 @@ async function runQueueTests() {
 
   resetQueueState();
   queue.configure({ concurrency: 1, retryCount: 0, operationTimeoutMs: 1000, persistenceEnabled: true, persistencePath });
-  const cancelId = queue.enqueue(makeTask('cancel-task', 500));
+  const cancelFile = path.join('C:\\virtual', 'shared-cancel.pdf');
+  const cancelId = queue.enqueue(makeTask('cancel-task', 500, { cancelDelayMs: 120, filePaths: [cancelFile] }));
   await wait(60);
   assert.strictEqual(queue.cancel(cancelId), true);
+  let cancellingTask = queue.getQueueStatus().find((task) => task.id === cancelId);
+  assert.strictEqual(cancellingTask.status, 'running', 'A fila deve manter a tarefa ativa enquanto o worker encerra.');
+  assert.strictEqual(cancellingTask.cancellationRequested, true, 'A interface deve distinguir pedido de cancelamento de tarefa encerrada.');
+  assert.throws(() => queue.enqueue(makeTask('cancel-overlap', 10, { filePaths: [cancelFile] })), /processamento/i, 'A origem permanece bloqueada até o worker parar.');
   await drainQueue();
-  record('queue cancellation', 'ok', 'cancelamento explicito remove tarefa com seguranca');
+  cancellingTask = queue.getQueueStatus().find((task) => task.id === cancelId);
+  assert.strictEqual(cancellingTask.status, 'cancelled', 'A fila só conclui o cancelamento após o worker parar.');
+  assert.strictEqual(queue.enqueue(makeTask('cancel-retry', 10, { filePaths: [cancelFile] })), 'cancel-retry', 'A origem volta a ficar disponível depois da finalização real.');
+  await drainQueue();
+  record('queue cancellation', 'ok', 'cancelamento fica em andamento até o worker parar; origem não pode ser reutilizada antes da liberação');
 
   resetQueueState();
   queue.configure({ concurrency: 1, retryCount: 0, operationTimeoutMs: 120, persistenceEnabled: true, persistencePath });
-  queue.enqueue(makeTask('timeout-task', 500, { hang: true }));
+  queue.enqueue(makeTask('timeout-task', 500, { hang: true, cancelDelayMs: 80 }));
+  await wait(145);
+  const timingOutTask = queue.getQueueStatus().find((task) => task.id === 'timeout-task');
+  assert.strictEqual(timingOutTask.status, 'running', 'Timeout deve aguardar o encerramento real da execução.');
+  assert.strictEqual(timingOutTask.timeoutRequested, true);
   await drainQueue();
+  assert.strictEqual(queue.getQueueStatus().find((task) => task.id === 'timeout-task').status, 'timeout');
   record('queue timeout', 'ok', 'timeout interrompe operacao travada e libera a fila');
 
   resetQueueState();

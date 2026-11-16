@@ -1,5 +1,6 @@
 ﻿import { WATERMARK_DEFAULTS } from "../constants.js";
 import { normalizeBinaryData, clamp } from "../pdf-preview-utils.js";
+import { formatDocumentMeta } from '../document-info.js';
 
 const WATERMARK_PRESETS = {
   CONFIDENCIAL: { text: "CONFIDENCIAL", color: "#6e6e6e", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 },
@@ -7,6 +8,13 @@ const WATERMARK_PRESETS = {
   RASCUNHO: { text: "RASCUNHO", color: "#9a6700", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 },
   COPIA: { text: "COPIA", color: "#5b5fc7", opacity: 15, rotation: 35, position: "diagonal", fontSize: 76 }
 };
+
+const PREVIEW_MAX_DIMENSION = 960;
+
+function normalizeQuarterTurn(value) {
+  const normalized = ((Number(value) || 0) % 360 + 360) % 360;
+  return [0, 90, 180, 270].includes(normalized) ? normalized : 0;
+}
 
 function mapPreviewFontFamily(fontFamily) {
   if (fontFamily === "Calibri") return '700 32px Calibri, Candara, Segoe, sans-serif';
@@ -28,19 +36,54 @@ export function createWatermarkWorkspaceController(deps) {
     buildFileListItem,
     showValidationMessage
   } = deps;
+  let keyboardBindingsReady = false;
 
   let cachedPdfPageImage = null;
   let cachedPdfFilePath = null;
+  let cachedPdfPageIndex = -1;
+  let cachedPdfDocument = null;
   let previewToken = 0;
 
   function getPreviewCanvas() {
     return document.getElementById("watermark-preview-canvas");
   }
 
-  function resetPdfPreviewCache() {
+  function resetPdfPreviewCache({ destroyDocument = true } = {}) {
     previewToken += 1;
+    if (destroyDocument) {
+      void Promise.resolve(cachedPdfDocument?.destroy?.()).catch(() => {});
+      cachedPdfDocument = null;
+      cachedPdfFilePath = null;
+      state.watermarkPreviewPageCount = 0;
+    }
     cachedPdfPageImage = null;
-    cachedPdfFilePath = null;
+    cachedPdfPageIndex = -1;
+  }
+
+  function updatePageNavigation() {
+    const fileCount = state.watermarkFiles.length;
+    const fileIndex = state.watermarkPreviewIndex || 0;
+    const pageCount = Math.max(1, Number(state.watermarkPreviewPageCount) || 1);
+    const pageIndex = clamp(Number(state.watermarkPreviewPageIndex) || 0, 0, pageCount - 1);
+    state.watermarkPreviewPageIndex = pageIndex;
+    const pageLabel = document.getElementById("watermark-page-label");
+    if (pageLabel) {
+      pageLabel.textContent = fileCount > 0
+        ? `Arquivo ${fileIndex + 1} de ${fileCount} • Página ${pageIndex + 1} de ${pageCount}`
+        : "Arquivo 0 de 0 • Página 0 de 0";
+    }
+    const previousButton = document.getElementById("btn-watermark-prev-page");
+    const nextButton = document.getElementById("btn-watermark-next-page");
+    if (previousButton) {
+      previousButton.disabled = fileCount === 0 || pageIndex <= 0;
+      previousButton.title = "Página anterior do arquivo selecionado";
+      previousButton.setAttribute("aria-label", "Ir para a página anterior do arquivo selecionado");
+    }
+    if (nextButton) {
+      nextButton.disabled = fileCount === 0 || pageIndex >= pageCount - 1;
+      nextButton.title = "Próxima página do arquivo selecionado";
+      nextButton.setAttribute("aria-label", "Ir para a próxima página do arquivo selecionado");
+    }
   }
 
   function getFormValues() {
@@ -58,27 +101,11 @@ export function createWatermarkWorkspaceController(deps) {
   }
 
   function getPendingMessage() {
-    if (state.watermarkFiles.length === 0) {
-      return ""; // No files loaded, so no progress to lose
-    }
-
-    const values = getFormValues();
-    const isDirty = values.kind !== "text"
-      || values.text !== WATERMARK_DEFAULTS.textValue
-      || values.fontFamily !== WATERMARK_DEFAULTS.fontFamily
-      || values.fontSize !== WATERMARK_DEFAULTS.textSize
-      || String(values.color || "").toLowerCase() !== WATERMARK_DEFAULTS.textColor.toLowerCase()
-      || values.position !== WATERMARK_DEFAULTS.position
-      || values.opacity !== WATERMARK_DEFAULTS.opacity
-      || values.rotation !== WATERMARK_DEFAULTS.rotation
-      || values.scale !== WATERMARK_DEFAULTS.scale
-      || (document.getElementById("watermark-output-suffix")?.value?.trim() || "") !== WATERMARK_DEFAULTS.outputSuffix;
-
-    // Only warn if they changed settings, loaded a watermark image, or loaded multiple files in batch
-    if (state.watermarkImageFile || isDirty || state.watermarkFiles.length > 1) {
+    // A single source file is already work worth protecting: leaving this tab
+    // clears it together with its preview and any configured watermark values.
+    if (state.watermarkFiles.length > 0 || state.watermarkImageFile) {
       return "Há arquivos ou imagem configurados em Marca d'água. Se sairmos agora, essa seleção será perdida.";
     }
-
     return "";
   }
 
@@ -94,6 +121,8 @@ export function createWatermarkWorkspaceController(deps) {
       numberPages: document.getElementById("watermark-number-pages")?.checked ?? false,
       createCopies: true
     };
+
+    options.sourceRotations = state.watermarkFiles.map((file) => normalizeQuarterTurn(file.rotation));
 
     if (kind === "text") {
       options.text = document.getElementById("watermark-text-value").value.trim();
@@ -138,22 +167,86 @@ export function createWatermarkWorkspaceController(deps) {
   function clearWorkspace() {
     state.watermarkFiles = [];
     state.watermarkPreviewIndex = 0;
+    state.watermarkPreviewPageIndex = 0;
+    state.watermarkPreviewPageCount = 0;
     cachedPdfPageImage = null;
     cachedPdfFilePath = null;
     clearPreviewState();
     renderState();
   }
 
-  function handleFiles(files) {
+  async function handleFiles(files) {
+    const addedPaths = [];
     files.forEach((file) => {
       const fileKey = file?.path || `${file?.name || "file"}:${file?.size || 0}`;
       if (!state.watermarkFiles.some((existing) => (existing.path || `${existing.name || "file"}:${existing.size || 0}`) === fileKey)) {
-        state.watermarkFiles.push({ name: file.name, size: file.size, path: file.path || "", fileObject: file });
+        state.watermarkFiles.push({
+          name: file.name,
+          size: file.size,
+          path: file.path || "",
+          fileObject: file,
+          rotation: 0,
+          validationStatus: file.path ? "pending" : "invalid",
+          validationMessage: file.path ? "Verificando arquivo…" : "O arquivo não possui um caminho local acessível."
+        });
+        if (file.path) addedPaths.push(file.path);
       }
     });
     if (state.watermarkPreviewIndex >= state.watermarkFiles.length) {
       state.watermarkPreviewIndex = 0;
     }
+    state.watermarkPreviewPageIndex = 0;
+    state.watermarkPreviewPageCount = 0;
+    renderState();
+    resetPdfPreviewCache();
+    loadPdfPreviewPage();
+
+    if (addedPaths.length > 0 && window.api?.preflightBatchFiles) {
+      try {
+        const result = await window.api.preflightBatchFiles({ type: "watermark", files: addedPaths });
+        const byPath = new Map((result.results || []).map((item) => [item.path, item]));
+        state.watermarkFiles.forEach((file) => {
+          const validation = byPath.get(file.path);
+          if (!validation) return;
+          file.validationStatus = validation.status;
+          file.validationMessage = validation.message;
+        });
+        renderState();
+        const validations = result.results || [];
+        const invalid = validations.filter((item) => item.status !== "valid");
+        const valid = validations.length - invalid.length;
+        if (invalid.length > 0) {
+          notify({
+            tone: "warning",
+            title: "Arquivos adicionados com atenção",
+            message: `${valid} arquivo(s) pronto(s); ${invalid.length} arquivo(s) precisam ser revisado(s).`,
+            detail: invalid.slice(0, 3).map((item) => `${item.name}: ${item.message}`).join(" • "),
+            important: true
+          });
+        } else if (valid > 0) {
+          notify({ tone: "success", title: "Arquivos adicionados", message: `${valid} arquivo(s) verificado(s) e pronto(s) para aplicação.` });
+        }
+      } catch (error) {
+        state.watermarkFiles.forEach((file) => {
+          if (file.validationStatus === "pending") {
+            file.validationStatus = "invalid";
+            file.validationMessage = "Não foi possível verificar este arquivo.";
+          }
+        });
+        renderState();
+        notify({ tone: "warning", title: "Verificação não concluída", message: "Revise os arquivos marcados antes de continuar." });
+      }
+    }
+  }
+
+  function removeFileAtIndex(removeIndex) {
+    if (!Number.isInteger(removeIndex) || removeIndex < 0 || removeIndex >= state.watermarkFiles.length) return;
+    state.watermarkFiles.splice(removeIndex, 1);
+    if (state.watermarkPreviewIndex >= state.watermarkFiles.length) {
+      state.watermarkPreviewIndex = Math.max(0, state.watermarkFiles.length - 1);
+    }
+    state.watermarkPreviewPageIndex = 0;
+    state.watermarkPreviewPageCount = 0;
     renderState();
     resetPdfPreviewCache();
     loadPdfPreviewPage();
@@ -170,6 +263,15 @@ export function createWatermarkWorkspaceController(deps) {
 
     if (!hasFiles) {
       list.innerHTML = "";
+      const pageLabel = document.getElementById("watermark-page-label");
+      if (pageLabel) pageLabel.textContent = "Arquivo 0 de 0 • Página 0 de 0";
+      const rotationLabel = document.getElementById("watermark-source-rotation-label");
+      if (rotationLabel) rotationLabel.textContent = "Documento: 0°";
+      ["btn-watermark-rotate-left", "btn-watermark-rotate-right", "btn-watermark-reset-rotation"].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = true;
+      });
+      renderPreview();
       return;
     }
 
@@ -177,21 +279,15 @@ export function createWatermarkWorkspaceController(deps) {
       .map((file, index) => buildFileListItem(file, index, { 
         allowReorder: false, 
         total: state.watermarkFiles.length,
-        isActive: index === (state.watermarkPreviewIndex || 0)
+        isActive: index === (state.watermarkPreviewIndex || 0),
+        showValidationStatus: true
       }))
       .join("");
 
     list.querySelectorAll("[data-remove]").forEach((button) => {
       button.addEventListener("click", (event) => {
         event.stopPropagation();
-        const removeIndex = Number(button.getAttribute("data-remove"));
-        state.watermarkFiles.splice(removeIndex, 1);
-        if (state.watermarkPreviewIndex >= state.watermarkFiles.length) {
-          state.watermarkPreviewIndex = Math.max(0, state.watermarkFiles.length - 1);
-        }
-        renderState();
-        resetPdfPreviewCache();
-        loadPdfPreviewPage();
+        removeFileAtIndex(Number(button.getAttribute("data-remove")));
       });
     });
 
@@ -203,6 +299,8 @@ export function createWatermarkWorkspaceController(deps) {
       item.addEventListener("click", () => {
         const index = Number(item.getAttribute("data-index"));
         state.watermarkPreviewIndex = index;
+        state.watermarkPreviewPageIndex = 0;
+        state.watermarkPreviewPageCount = 0;
         renderState();
         resetPdfPreviewCache();
         loadPdfPreviewPage();
@@ -212,13 +310,14 @@ export function createWatermarkWorkspaceController(deps) {
         const index = Number(item.getAttribute("data-index"));
         if (event.key === "Delete" || event.key === "Backspace") {
           event.preventDefault();
-          const removeButton = item.querySelector("[data-remove]");
-          removeButton?.click();
+          removeFileAtIndex(index);
           return;
         }
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           state.watermarkPreviewIndex = index;
+          state.watermarkPreviewPageIndex = 0;
+          state.watermarkPreviewPageCount = 0;
           renderState();
           resetPdfPreviewCache();
           loadPdfPreviewPage();
@@ -227,14 +326,34 @@ export function createWatermarkWorkspaceController(deps) {
     });
 
     const previewIndex = state.watermarkPreviewIndex || 0;
-    const pageLabel = document.getElementById("watermark-page-label");
-    if (pageLabel) {
-      pageLabel.textContent = hasFiles
-        ? `Item ${previewIndex + 1} de ${state.watermarkFiles.length}`
-        : "Item 0 de 0";
+    const currentFile = state.watermarkFiles[previewIndex] || null;
+    const sourceRotation = normalizeQuarterTurn(currentFile?.rotation);
+    updatePageNavigation();
+
+    const rotationLabel = document.getElementById("watermark-source-rotation-label");
+    if (rotationLabel) {
+      rotationLabel.textContent = `Documento: ${sourceRotation}°`;
     }
+    ["btn-watermark-rotate-left", "btn-watermark-rotate-right", "btn-watermark-reset-rotation"].forEach((id) => {
+      const button = document.getElementById(id);
+      if (button) button.disabled = !currentFile || (id === "btn-watermark-reset-rotation" && sourceRotation === 0);
+    });
 
     renderPreview();
+  }
+
+  function rotateCurrentSource(delta) {
+    const currentFile = state.watermarkFiles[state.watermarkPreviewIndex || 0];
+    if (!currentFile) return;
+    currentFile.rotation = normalizeQuarterTurn((currentFile.rotation || 0) + delta);
+    renderState();
+  }
+
+  function resetCurrentSourceRotation() {
+    const currentFile = state.watermarkFiles[state.watermarkPreviewIndex || 0];
+    if (!currentFile || normalizeQuarterTurn(currentFile.rotation) === 0) return;
+    currentFile.rotation = 0;
+    renderState();
   }
 
   async function loadPdfPreviewPage() {
@@ -244,7 +363,9 @@ export function createWatermarkWorkspaceController(deps) {
     if (!currentFile || !pdfjsLib) return;
     const filePath = currentFile.path || currentFile.fileObject?.path || "";
     const fileObject = currentFile.fileObject || null;
-    if (cachedPdfFilePath === filePath && cachedPdfPageImage) return;
+    const previewFileKey = filePath || currentFile.name || "";
+    const requestedPageIndex = Math.max(0, Number(state.watermarkPreviewPageIndex) || 0);
+    if (cachedPdfFilePath === previewFileKey && cachedPdfPageIndex === requestedPageIndex && cachedPdfPageImage) return;
 
     const isImage = /\.(jpg|jpeg|png)$/i.test(currentFile.name || filePath);
 
@@ -270,30 +391,25 @@ export function createWatermarkWorkspaceController(deps) {
           return;
         }
 
-        const canvas = getPreviewCanvas();
-        if (!canvas) return;
-
         const offscreen = document.createElement("canvas");
-        offscreen.width = canvas.width;
-        offscreen.height = canvas.height;
+        const imgWidth = Math.max(1, img.naturalWidth || img.width || 1);
+        const imgHeight = Math.max(1, img.naturalHeight || img.height || 1);
+        const previewScale = Math.min(1, PREVIEW_MAX_DIMENSION / imgWidth, PREVIEW_MAX_DIMENSION / imgHeight);
+        offscreen.width = Math.max(1, Math.round(imgWidth * previewScale));
+        offscreen.height = Math.max(1, Math.round(imgHeight * previewScale));
         const offCtx = offscreen.getContext("2d");
+        if (!offCtx) return;
 
         offCtx.fillStyle = "#ffffff";
         offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
-
-        const imgWidth = img.naturalWidth || img.width;
-        const imgHeight = img.naturalHeight || img.height;
-        const scale = Math.min(canvas.width / imgWidth, canvas.height / imgHeight);
-        
-        const drawWidth = imgWidth * scale;
-        const drawHeight = imgHeight * scale;
-        const xOffset = (canvas.width - drawWidth) / 2;
-        const yOffset = (canvas.height - drawHeight) / 2;
-
-        offCtx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
+        offCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
 
         cachedPdfPageImage = offscreen;
-        cachedPdfFilePath = filePath || currentFile.name || "";
+        cachedPdfFilePath = previewFileKey;
+        cachedPdfPageIndex = 0;
+        state.watermarkPreviewPageIndex = 0;
+        state.watermarkPreviewPageCount = 1;
+        updatePageNavigation();
         renderPreview();
         URL.revokeObjectURL(dataUrl);
       } else {
@@ -303,40 +419,35 @@ export function createWatermarkWorkspaceController(deps) {
             ? await fileObject.arrayBuffer()
             : null;
         if (!fileData) return;
-        const pdf = await pdfjsLib.getDocument({ data: normalizeBinaryData(fileData) }).promise;
-        const page = await pdf.getPage(1);
+        if (!cachedPdfDocument || cachedPdfFilePath !== previewFileKey) {
+          await Promise.resolve(cachedPdfDocument?.destroy?.()).catch(() => {});
+          cachedPdfDocument = await pdfjsLib.getDocument({ data: normalizeBinaryData(fileData) }).promise;
+        }
+        state.watermarkPreviewPageCount = cachedPdfDocument.numPages || 1;
+        state.watermarkPreviewPageIndex = clamp(requestedPageIndex, 0, state.watermarkPreviewPageCount - 1);
+        const page = await cachedPdfDocument.getPage(state.watermarkPreviewPageIndex + 1);
         const viewport = page.getViewport({ scale: 1 });
 
-        const canvas = getPreviewCanvas();
-        if (!canvas) return;
-
-        const scale = Math.min(canvas.width / viewport.width, canvas.height / viewport.height);
+        const scale = Math.min(1.5, PREVIEW_MAX_DIMENSION / viewport.width, PREVIEW_MAX_DIMENSION / viewport.height);
         const scaledViewport = page.getViewport({ scale });
 
-        const offscreen = document.createElement("canvas");
-        offscreen.width = canvas.width;
-        offscreen.height = canvas.height;
-        const offCtx = offscreen.getContext("2d");
         const renderCanvas = document.createElement("canvas");
         renderCanvas.width = Math.max(1, Math.round(scaledViewport.width));
         renderCanvas.height = Math.max(1, Math.round(scaledViewport.height));
         const renderCtx = renderCanvas.getContext("2d");
 
-        if (!offCtx || !renderCtx) return;
+        if (!renderCtx) return;
 
         renderCtx.fillStyle = "#ffffff";
         renderCtx.fillRect(0, 0, renderCanvas.width, renderCanvas.height);
 
         await page.render({ canvasContext: renderCtx, viewport: scaledViewport }).promise;
         if (currentPreviewToken !== previewToken || state.watermarkFiles[previewIndex] !== currentFile) return;
-        offCtx.fillStyle = "#ffffff";
-        offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
-        const xOffset = (offscreen.width - renderCanvas.width) / 2;
-        const yOffset = (offscreen.height - renderCanvas.height) / 2;
-        offCtx.drawImage(renderCanvas, xOffset, yOffset);
 
-        cachedPdfPageImage = offscreen;
-        cachedPdfFilePath = filePath || currentFile.name || "";
+        cachedPdfPageImage = renderCanvas;
+        cachedPdfFilePath = previewFileKey;
+        cachedPdfPageIndex = state.watermarkPreviewPageIndex;
+        updatePageNavigation();
         renderPreview();
         await page.cleanup?.();
       }
@@ -345,13 +456,63 @@ export function createWatermarkWorkspaceController(deps) {
       console.warn("Preview PDF page load failed, using fallback:", error);
       cachedPdfPageImage = null;
       cachedPdfFilePath = null;
+      cachedPdfPageIndex = -1;
+      state.watermarkPreviewPageCount = 0;
+      updatePageNavigation();
       renderPreview();
     }
   }
 
+  function syncPreviewCanvasDimensions(canvas) {
+    if (!cachedPdfPageImage) {
+      if (canvas.width !== 720 || canvas.height !== 960) {
+        canvas.width = 720;
+        canvas.height = 960;
+      }
+      return;
+    }
+
+    const currentFile = state.watermarkFiles[state.watermarkPreviewIndex || 0];
+    const rotation = normalizeQuarterTurn(currentFile?.rotation);
+    const swapsAxes = rotation === 90 || rotation === 270;
+    const sourceWidth = Math.max(1, cachedPdfPageImage.width || 1);
+    const sourceHeight = Math.max(1, cachedPdfPageImage.height || 1);
+    const rotatedWidth = swapsAxes ? sourceHeight : sourceWidth;
+    const rotatedHeight = swapsAxes ? sourceWidth : sourceHeight;
+    const scale = Math.min(PREVIEW_MAX_DIMENSION / rotatedWidth, PREVIEW_MAX_DIMENSION / rotatedHeight);
+    const targetWidth = Math.max(1, Math.round(rotatedWidth * scale));
+    const targetHeight = Math.max(1, Math.round(rotatedHeight * scale));
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+  }
+
+  function drawSourceWithRotation(context, image, width, height, rotation) {
+    context.save();
+    if (rotation === 90) {
+      context.translate(width, 0);
+      context.rotate(Math.PI / 2);
+      context.drawImage(image, 0, 0, height, width);
+    } else if (rotation === 180) {
+      context.translate(width, height);
+      context.rotate(Math.PI);
+      context.drawImage(image, 0, 0, width, height);
+    } else if (rotation === 270) {
+      context.translate(0, height);
+      context.rotate(-Math.PI / 2);
+      context.drawImage(image, 0, 0, height, width);
+    } else {
+      context.drawImage(image, 0, 0, width, height);
+    }
+    context.restore();
+  }
+
   function drawPreviewPage(context, width, height) {
     if (cachedPdfPageImage) {
-      context.drawImage(cachedPdfPageImage, 0, 0, width, height);
+      const currentFile = state.watermarkFiles[state.watermarkPreviewIndex || 0];
+      drawSourceWithRotation(context, cachedPdfPageImage, width, height, normalizeQuarterTurn(currentFile?.rotation));
       return;
     }
 
@@ -447,6 +608,7 @@ export function createWatermarkWorkspaceController(deps) {
   function renderPreview() {
     const canvas = getPreviewCanvas();
     if (!canvas) return;
+    syncPreviewCanvasDimensions(canvas);
     const context = canvas.getContext("2d");
     if (!context) return;
 
@@ -557,6 +719,43 @@ export function createWatermarkWorkspaceController(deps) {
   }
 
   function setup() {
+    if (!keyboardBindingsReady) {
+      keyboardBindingsReady = true;
+      document.addEventListener("keydown", (event) => {
+        const tab = document.getElementById("tab-watermark");
+        if (!tab?.classList.contains("active") || state.watermarkFiles.length === 0) return;
+
+        const target = event.target;
+        const isEditableTarget = target && (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable
+        );
+        if (isEditableTarget) return;
+
+        if (event.key === "Delete" || event.key === "Backspace") {
+          event.preventDefault();
+          removeFileAtIndex(state.watermarkPreviewIndex || 0);
+          return;
+        }
+        if (event.key === "ArrowLeft" && (state.watermarkPreviewPageIndex || 0) > 0) {
+          event.preventDefault();
+          state.watermarkPreviewPageIndex -= 1;
+          resetPdfPreviewCache({ destroyDocument: false });
+          loadPdfPreviewPage();
+          return;
+        }
+        const pageCount = Math.max(1, Number(state.watermarkPreviewPageCount) || 1);
+        if (event.key === "ArrowRight" && (state.watermarkPreviewPageIndex || 0) < pageCount - 1) {
+          event.preventDefault();
+          state.watermarkPreviewPageIndex += 1;
+          resetPdfPreviewCache({ destroyDocument: false });
+          loadPdfPreviewPage();
+        }
+      });
+    }
+
     document.querySelectorAll('input[name="watermark-kind"]').forEach((radio) => {
       radio.addEventListener("change", (event) => {
         const kind = event.target.value;
@@ -597,7 +796,7 @@ export function createWatermarkWorkspaceController(deps) {
         fileNameEl.textContent = state.watermarkImageFile?.name || "Nenhuma imagem selecionada";
       }
       if (imageMeta) imageMeta.textContent = state.watermarkImageFile
-        ? `${state.watermarkImageFile.name} - ${formatBytes(state.watermarkImageFile.size)}`
+        ? formatDocumentMeta(formatBytes, state.watermarkImageFile)
         : "PNG e JPG suportados. SVG será usado quando o ambiente local permitir rasterização segura.";
       try {
         if (state.watermarkImageFile) {
@@ -616,26 +815,23 @@ export function createWatermarkWorkspaceController(deps) {
     });
 
     document.getElementById("btn-watermark-prev-page")?.addEventListener("click", () => {
-      if (state.watermarkFiles.length <= 1) return;
-      state.watermarkPreviewIndex = (state.watermarkPreviewIndex || 0) - 1;
-      if (state.watermarkPreviewIndex < 0) {
-        state.watermarkPreviewIndex = state.watermarkFiles.length - 1;
-      }
-      renderState();
-      resetPdfPreviewCache();
+      if (!state.watermarkFiles.length || (state.watermarkPreviewPageIndex || 0) <= 0) return;
+      state.watermarkPreviewPageIndex -= 1;
+      resetPdfPreviewCache({ destroyDocument: false });
       loadPdfPreviewPage();
     });
 
     document.getElementById("btn-watermark-next-page")?.addEventListener("click", () => {
-      if (state.watermarkFiles.length <= 1) return;
-      state.watermarkPreviewIndex = (state.watermarkPreviewIndex || 0) + 1;
-      if (state.watermarkPreviewIndex >= state.watermarkFiles.length) {
-        state.watermarkPreviewIndex = 0;
-      }
-      renderState();
-      resetPdfPreviewCache();
+      const pageCount = Math.max(1, Number(state.watermarkPreviewPageCount) || 1);
+      if (!state.watermarkFiles.length || (state.watermarkPreviewPageIndex || 0) >= pageCount - 1) return;
+      state.watermarkPreviewPageIndex += 1;
+      resetPdfPreviewCache({ destroyDocument: false });
       loadPdfPreviewPage();
     });
+
+    document.getElementById("btn-watermark-rotate-left")?.addEventListener("click", () => rotateCurrentSource(-90));
+    document.getElementById("btn-watermark-rotate-right")?.addEventListener("click", () => rotateCurrentSource(90));
+    document.getElementById("btn-watermark-reset-rotation")?.addEventListener("click", resetCurrentSourceRotation);
 
     renderState();
     setWatermarkKind(document.querySelector('input[name="watermark-kind"]:checked')?.value || "text");
@@ -652,7 +848,8 @@ export function createWatermarkWorkspaceController(deps) {
     getQueuePayload,
     clearPreviewState,
     clearWorkspace,
-    validateBeforeQueue
+    validateBeforeQueue,
+    rotateCurrentSource,
+    resetCurrentSourceRotation
   };
 }
-

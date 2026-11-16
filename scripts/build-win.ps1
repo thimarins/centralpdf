@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 function Remove-PathWithRetry {
   param(
@@ -261,6 +261,16 @@ New-Item -ItemType Directory -Path $pdfjsTarget -Force | Out-Null
 if ($LASTEXITCODE -ge 8) {
   throw "Robocopy of pdfjs-dist failed"
 }
+$lucideSource = Join-Path $repoRoot "node_modules\lucide"
+$lucideTarget = Join-Path $tempBuild "node_modules\lucide"
+if (-not (Test-Path -LiteralPath $lucideSource)) {
+  throw "Dependencia lucide nao encontrada em $lucideSource"
+}
+New-Item -ItemType Directory -Path $lucideTarget -Force | Out-Null
+& robocopy $lucideSource $lucideTarget /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+if ($LASTEXITCODE -ge 8) {
+  throw "Robocopy of lucide failed"
+}
 
 Set-Location $tempBuild
 & node (Join-Path $repoRoot "node_modules/vite/bin/vite.js") build
@@ -282,18 +292,39 @@ Write-Host "Local Vite build workaround completed successfully!"
 $builderArgs = @(
   ("${repoRoot}\node_modules\electron-builder\cli.js"),
   "--win",
-  "msi"
+  "msi",
+  "portable"
 )
 $electronDistOverride = $env:CENTRAL_PDF_ELECTRON_DIST
 if ($electronDistOverride -and (Test-Path -LiteralPath $electronDistOverride)) {
   $builderArgs += "--config.electronDist=$electronDistOverride"
   Write-Host "Using Electron distribution override: $electronDistOverride"
+} else {
+  $electronSourceDist = Join-Path $repoRoot "node_modules\electron\dist"
+  $isolatedElectronDist = "C:\pdfnext-electron-dist-temp"
+  if (-not (Test-Path -LiteralPath (Join-Path $electronSourceDist "electron.exe"))) {
+    throw "Electron distribution not found in $electronSourceDist"
+  }
+  if (Test-Path -LiteralPath $isolatedElectronDist) {
+    Remove-PathWithRetry -LiteralPath $isolatedElectronDist
+  }
+  Copy-Item -LiteralPath $electronSourceDist -Destination $isolatedElectronDist -Recurse -Force
+  $electronDistOverride = $isolatedElectronDist
+  $builderArgs += "--config.electronDist=$electronDistOverride"
+  Write-Host "Using isolated Electron distribution: $electronDistOverride"
 }
 $builderArgs += "--config.directories.output=$stagingDir"
 Invoke-BuilderStep -FilePath "node" -Arguments $builderArgs
+if ($isolatedElectronDist -and (Test-Path -LiteralPath $isolatedElectronDist)) {
+  Remove-PathWithRetry -LiteralPath $isolatedElectronDist
+}
 
 if (-not (Test-Path -LiteralPath $msiSource)) {
   throw "Artefato MSI nao encontrado em $msiSource"
+}
+
+if (-not (Test-Path -LiteralPath $portableSource)) {
+  throw "Artefato portátil nao encontrado em $portableSource"
 }
 
 if (-not (Test-Path -LiteralPath $unpackedSourceDir)) {
@@ -303,22 +334,44 @@ if (-not (Test-Path -LiteralPath $unpackedSourceDir)) {
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $latestDir -Force | Out-Null
 Remove-FileIfExists -LiteralPath $latestMsiTarget
+Remove-FileIfExists -LiteralPath $latestPortableTarget
 Remove-FileIfExists -LiteralPath $latestManifestTarget
 Remove-PathWithRetry -LiteralPath $latestFallbackUnpackedTargetDir
 Remove-PathWithRetry -LiteralPath $latestDataDir
 Remove-PathWithRetry -LiteralPath $unpackedTargetDir
 Copy-FileWithRetry -Source $msiSource -Destination $msiDistTarget
 Copy-FileWithRetry -Source $msiSource -Destination $msiTarget
+Copy-FileWithRetry -Source $portableSource -Destination $portableDistTarget
+Copy-FileWithRetry -Source $portableSource -Destination $portableTarget
 Copy-Item -LiteralPath $unpackedSourceDir -Destination $unpackedTargetDir -Recurse -Force
 $latestUnpackedPublishedDir = Publish-UnpackedLatest -Source $unpackedSourceDir -Destination $latestUnpackedTargetDir -FallbackDestination $latestFallbackUnpackedTargetDir
 $latestMsiFinalTarget = Try-CopyLatestArtifact -Source $msiSource -Destination $latestMsiTarget -PendingDestination $latestPendingMsiTarget
+$latestPortableFinalTarget = Try-CopyLatestArtifact -Source $portableSource -Destination $latestPortableTarget -PendingDestination $latestPendingPortableTarget
+
+# Copy to root and ScanAccess installer for fast access
+$rootMsi = Join-Path $repoRoot "Central-PDF-win-x64.msi"
+try {
+  Copy-FileWithRetry -Source $msiSource -Destination $rootMsi
+} catch {}
+
+$scanAccessInstallerDir = "C:\ScanAccess\installer"
+if (Test-Path -LiteralPath $scanAccessInstallerDir) {
+  try {
+    Copy-FileWithRetry -Source $msiSource -Destination (Join-Path $scanAccessInstallerDir ("Central PDF {0}.msi" -f $releaseVersion))
+    Copy-FileWithRetry -Source $msiSource -Destination (Join-Path $scanAccessInstallerDir "Central-PDF-win-x64.msi")
+    Copy-FileWithRetry -Source $portableSource -Destination (Join-Path $scanAccessInstallerDir "Central-PDF-Portable.exe")
+    Write-Host "Copiado para instalador centralizado: $scanAccessInstallerDir"
+  } catch {}
+}
+Set-Content -LiteralPath $releasePortableMarker -Value "Portable disponível: $portableTarget" -Encoding UTF8
+Set-Content -LiteralPath $latestPortableMarker -Value "Portable disponível: $latestPortableFinalTarget" -Encoding UTF8
 
 @(
   "Abra sem instalar usando:"
   "1. $(Split-Path -Leaf $latestUnpackedPublishedDir)\Central PDF.exe"
   ""
   "Observacao:"
-  "O pacote portátil foi omitido para acelerar a geração do MSI."
+  "O pacote portátil pode ser executado sem instalação."
 ) | Set-Content -LiteralPath $latestNoInstallGuide -Encoding UTF8
 
 @(
@@ -330,6 +383,7 @@ $latestMsiFinalTarget = Try-CopyLatestArtifact -Source $msiSource -Destination $
   "Arquivos:"
   $msiDistTarget
   $msiTarget
+  $portableTarget
   $unpackedTargetDir
 ) | Set-Content -LiteralPath $manifestTarget -Encoding UTF8
 
@@ -341,10 +395,11 @@ $latestMsiFinalTarget = Try-CopyLatestArtifact -Source $msiSource -Destination $
   ""
   "Arquivos:"
   $latestMsiFinalTarget
+  $latestPortableFinalTarget
   $latestUnpackedPublishedDir
   ""
   "Observacao:"
-  "O pacote portátil foi omitido para acelerar a geração do MSI."
+  "O pacote portátil pode ser executado sem instalação."
 ) | Set-Content -LiteralPath $latestManifestTarget -Encoding UTF8
 
 Write-Host ""
@@ -352,5 +407,6 @@ Write-Host "Build concluido com sucesso."
 Write-Host "MSI dist-installer: $msiDistTarget"
 Write-Host "MSI: $msiTarget"
 Write-Host "Latest MSI: $latestMsiFinalTarget"
+Write-Host "Latest portable: $latestPortableFinalTarget"
 Write-Host "Latest unpacked: $latestUnpackedTargetDir"
 

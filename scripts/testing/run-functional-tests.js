@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 const { PDFDocument } = require('pdf-lib');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const {
   assert,
   createTempDir,
@@ -17,15 +18,16 @@ const pdfService = require('../../src/main/pdf-service');
 const logger = require('../../src/main/logger');
 const utils = require('../../src/main/utils');
 const { APP_PATHS } = require('../../src/main/constants');
-const { convertImagesToPdf } = require('../../src/main/services/image-conversion/image-to-pdf');
+const { convertImagesToPdf, prepareImageForPdf } = require('../../src/main/services/image-conversion/image-to-pdf');
 const { applySimpleSignature } = require('../../src/main/services/signature/signature-service');
+const { embedFont } = require('../../src/main/services/signature/signature-renderer');
 const { convertPdfToWord } = require('../../src/main/services/conversion/pdf-to-word');
 
 function freshConfigServiceWithElectron(mockElectron) {
   const targetPath = require.resolve('../../src/main/config-service');
   const originalLoad = Module._load;
   delete require.cache[targetPath];
-  Module._load = function patched(request, parent, isMain) {
+  Module._load = function patched(request, _parent, _isMain) {
     if (request === 'electron') {
       return mockElectron;
     }
@@ -62,6 +64,42 @@ async function verifyRotation(filePath, expectedDegrees) {
     process.stderr.write = originalWrite;
     console.warn = originalWarn;
   }
+}
+
+async function getFirstPageMetrics(filePath) {
+  const doc = await PDFDocument.load(fs.readFileSync(filePath), { ignoreEncryption: true });
+  const page = doc.getPages()[0];
+  const size = page.getSize();
+  return {
+    width: size.width,
+    height: size.height,
+    rotation: page.getRotation().angle
+  };
+}
+
+async function readCornerColors(imageBytes) {
+  const image = await loadImage(imageBytes);
+  const canvas = createCanvas(image.width, image.height);
+  const context = canvas.getContext('2d');
+  context.drawImage(image, 0, 0);
+  const sample = (x, y) => Array.from(context.getImageData(x, y, 1, 1).data).slice(0, 3);
+  const insetX = Math.max(8, Math.floor(image.width * 0.18));
+  const insetY = Math.max(8, Math.floor(image.height * 0.18));
+  return {
+    width: image.width,
+    height: image.height,
+    topLeft: sample(insetX, insetY),
+    topRight: sample(image.width - insetX - 1, insetY),
+    bottomLeft: sample(insetX, image.height - insetY - 1),
+    bottomRight: sample(image.width - insetX - 1, image.height - insetY - 1)
+  };
+}
+
+function assertColorNear(actual, expected, label) {
+  assert.strictEqual(actual.length, 3, `${label}: amostra RGB inválida`);
+  expected.forEach((channel, index) => {
+    assert.ok(Math.abs(actual[index] - channel) <= 46, `${label}: canal ${index} fora da tolerância (${actual[index]} vs ${channel})`);
+  });
 }
 
 async function runFunctionalTests() {
@@ -119,9 +157,14 @@ async function runFunctionalTests() {
   assert.ok(utils.isValidImagePath(assets.watermarkSvg));
   record('image validation', 'ok', 'PNG, JPG e SVG de teste aceitos');
 
-  assert.strictEqual(pdfService.hasDigitalSignatures(assets.smallPdf), false);
-  assert.strictEqual(pdfService.hasDigitalSignatures(assets.signedIndicatorPdf), true);
-  record('signature detection', 'ok', 'detector encontra indicador simples de assinatura');
+  assert.strictEqual(await pdfService.hasDigitalSignatures(assets.smallPdf), false);
+  assert.strictEqual(await pdfService.hasDigitalSignatures(assets.signedIndicatorPdf), true);
+  assert.strictEqual(await pdfService.validatePdfIntegrity(assets.signedValidPdf), true);
+  assert.strictEqual(await pdfService.hasDigitalSignatures(assets.signedValidPdf), true);
+  assert.strictEqual(await pdfService.hasDigitalSignatures(path.join(workspace, 'inexistente.pdf')), false);
+  record('signature detection', 'ok', manifest.signedFixtureType === 'cms-detached-self-signed-v1'
+    ? 'detector encontra ByteRange e CMS destacado autoverificado após 256 KiB; certificado é efêmero e não testa confiança pública'
+    : 'detector encontra marcador /Sig após 256 KiB; este ambiente não gerou fixture criptográfica por falta de PowerShell 7');
 
   assert.strictEqual(await pdfService.validatePdfIntegrity(assets.smallPdf), true);
   const corruptIntegrity = await withSuppressedStderr(() => pdfService.validatePdfIntegrity(assets.corruptPdf));
@@ -133,6 +176,61 @@ async function runFunctionalTests() {
   assert.strictEqual(await countPdfPages(mergeOutput), 10);
   record('mergePdfs', 'ok', '2 + 8 paginas resultaram em 10 paginas');
 
+  const largeMergeOutput = path.join(workspace, 'merged-76-files.pdf');
+  const largeMergeInputs = Array.from({ length: 76 }, () => assets.smallPdf);
+  let largeMergeProgressEvents = 0;
+  await pdfService.mergePdfs(
+    largeMergeInputs,
+    largeMergeOutput,
+    {},
+    () => false,
+    () => { largeMergeProgressEvents += 1; }
+  );
+  assert.strictEqual(await countPdfPages(largeMergeOutput), 152);
+  assert.strictEqual(largeMergeProgressEvents, 76);
+  record('mergePdfs large batch', 'ok', 'lote de 76 arquivos processado com progresso por item');
+
+  const transientRenameDir = ensureDir(path.join(workspace, 'split-rename-retry'));
+  const transientOutput = path.join(transientRenameDir, 'pagina_1.pdf');
+  const originalRename = fs.promises.rename;
+  let transientRenameFailures = 0;
+  fs.promises.rename = async function simulateTransientWindowsLock(sourcePath, targetPath) {
+    if (path.resolve(targetPath) === path.resolve(transientOutput) && transientRenameFailures === 0) {
+      transientRenameFailures += 1;
+      throw Object.assign(new Error('simulated transient destination lock'), { code: 'EPERM' });
+    }
+    return originalRename.call(this, sourcePath, targetPath);
+  };
+  let retrySplitFiles;
+  try {
+    retrySplitFiles = await pdfService.splitPdfByPages(assets.smallPdf, transientRenameDir, 'pagina');
+  } finally {
+    fs.promises.rename = originalRename;
+  }
+  assert.strictEqual(transientRenameFailures, 1, 'O fixture deve simular uma falha transitória de rename no Windows.');
+  assert.strictEqual(retrySplitFiles.length, 2);
+  assert.ok(retrySplitFiles.every((filePath) => fs.statSync(filePath).size > 0), 'A repetição da gravação deve publicar todos os PDFs válidos.');
+  record('Windows transient EPERM rename', 'ok', 'falha temporária de bloqueio foi repetida e ambos os PDFs foram publicados íntegros');
+
+  const persistentRenameDir = ensureDir(path.join(workspace, 'split-rename-blocked'));
+  const blockedOutput = path.join(persistentRenameDir, 'pagina_1.pdf');
+  const originalBeforeBlockedRename = fs.readFileSync(assets.smallPdf);
+  fs.promises.rename = async function simulatePersistentWindowsLock(sourcePath, targetPath) {
+    if (path.resolve(targetPath) === path.resolve(blockedOutput)) {
+      throw Object.assign(new Error('simulated persistent destination lock'), { code: 'EBUSY' });
+    }
+    return originalRename.call(this, sourcePath, targetPath);
+  };
+  try {
+    await assert.rejects(pdfService.splitPdfByPages(assets.smallPdf, persistentRenameDir, 'pagina'), /simulated persistent destination lock/);
+  } finally {
+    fs.promises.rename = originalRename;
+  }
+  assert.ok(!fs.existsSync(blockedOutput), 'Falha persistente não deve deixar uma saída vazia que pareça concluída.');
+  assert.deepStrictEqual(fs.readdirSync(persistentRenameDir), [], 'Falha persistente deve limpar reserva e arquivo temporário.');
+  assert.deepStrictEqual(fs.readFileSync(assets.smallPdf), originalBeforeBlockedRename, 'Falha ao salvar não pode alterar o PDF original.');
+  record('Windows persistent rename failure cleanup', 'ok', 'reserva vazia e temporário removidos; origem preservada');
+
   const splitFiles = await pdfService.splitPdfByPages(assets.smallPdf, splitDir, 'pagina');
   assert.strictEqual(splitFiles.length, 2);
   assert.ok(splitFiles.every((file) => fs.existsSync(file)));
@@ -142,6 +240,24 @@ async function runFunctionalTests() {
   await pdfService.splitPdfByRanges(assets.mediumPdf, '1-3,5', splitRangeOutput);
   assert.strictEqual(await countPdfPages(splitRangeOutput), 4);
   record('splitPdfByRanges', 'ok', 'intervalo 1-3,5 gerou 4 paginas');
+
+  const splitContentDir = path.join(workspace, 'split-content');
+  await fs.promises.mkdir(splitContentDir, { recursive: true });
+  const originalContentPageCount = await countPdfPages(assets.mediumPdf);
+  const splitContentFiles = await pdfService.splitPdfByPageStarts(assets.mediumPdf, [4, 7, 4], splitContentDir, 'secao');
+  assert.strictEqual(splitContentFiles.length, 3);
+  assert.deepStrictEqual(await Promise.all(splitContentFiles.map(countPdfPages)), [3, 3, originalContentPageCount - 6]);
+  record('splitPdfByPageStarts', 'ok', 'deduplica cortes, preserva a ordem e inclui todas as paginas');
+
+  await assert.rejects(
+    () => pdfService.splitPdfByPageStarts(assets.mediumPdf, [0], splitContentDir, 'invalido'),
+    /pontos de separação são inválidos/
+  );
+  await assert.rejects(
+    () => pdfService.splitPdfByPageStarts(assets.mediumPdf, [], splitContentDir, 'sem-corte'),
+    /Selecione pelo menos uma página/
+  );
+  record('splitPdfByPageStarts validation', 'ok', 'rejeita limites invalidos e ausencia de cortes sem criar saidas');
 
   const splitBySize = await pdfService.splitPdfBySize(assets.manyPagesPdf, splitSizeDir, 50 * 1024, 'parte');
   assert.ok(splitBySize.length >= 2);
@@ -155,6 +271,14 @@ async function runFunctionalTests() {
   assert.strictEqual(await countPdfPages(organizeOutput), 2);
   assert.ok(await verifyRotation(organizeOutput, 90));
   record('organizePdf', 'ok', 'reordena paginas e aplica rotacao');
+
+  const organizePreserveOutput = path.join(workspace, 'organized-preserve-rotation.pdf');
+  await pdfService.organizePdf(assets.rotatedPdf, [{ sourceIndex: 0, rotation: 0 }], organizePreserveOutput);
+  assert.ok(await verifyRotation(organizePreserveOutput, 90));
+  const organizeComposeOutput = path.join(workspace, 'organized-compose-rotation.pdf');
+  await pdfService.organizePdf(assets.rotatedPdf, [{ sourceIndex: 0, rotation: 90 }], organizeComposeOutput);
+  assert.ok(await verifyRotation(organizeComposeOutput, 180));
+  record('organizePdf rotation preservation', 'ok', 'preserva /Rotate existente e compoe a rotacao solicitada');
 
   const compressOutput = path.join(workspace, 'compressed.pdf');
   const reduction = await pdfService.compressPdf(assets.imageHeavyPdf, compressOutput);
@@ -172,6 +296,37 @@ async function runFunctionalTests() {
   assert.strictEqual(await countPdfPages(imagesToPdfOutput), 3);
   assert.strictEqual(imageToPdfResult.pageCount, 3);
   record('convertImagesToPdf', 'ok', '3 imagens reunidas em um unico PDF com 3 paginas');
+
+  const orientationOutput = path.join(workspace, 'image-orientation.pdf');
+  await convertImagesToPdf([
+    assets.landscapePng,
+    assets.portraitPng,
+    assets.landscapePng
+  ], orientationOutput, () => {}, () => false, {
+    sourceRotations: [0, 0, 90]
+  });
+  const orientationDoc = await PDFDocument.load(fs.readFileSync(orientationOutput));
+  const orientationPages = orientationDoc.getPages().map((page) => page.getSize());
+  assert.ok(orientationPages[0].width > orientationPages[0].height);
+  assert.ok(orientationPages[1].height > orientationPages[1].width);
+  assert.ok(orientationPages[2].height > orientationPages[2].width);
+  record('convertImagesToPdf orientation', 'ok', 'paisagem, retrato e rotacao manual geram paginas coerentes');
+
+  const mirroredExifExpectations = {
+    2: { width: 160, height: 100, corners: [[20, 164, 77], [239, 32, 32], [240, 196, 25], [34, 85, 216]] },
+    4: { width: 160, height: 100, corners: [[34, 85, 216], [240, 196, 25], [239, 32, 32], [20, 164, 77]] },
+    5: { width: 100, height: 160, corners: [[239, 32, 32], [34, 85, 216], [20, 164, 77], [240, 196, 25]] },
+    7: { width: 100, height: 160, corners: [[240, 196, 25], [20, 164, 77], [34, 85, 216], [239, 32, 32]] }
+  };
+  for (const orientation of [2, 4, 5, 7]) {
+    const prepared = await prepareImageForPdf(assets[`exifMirror${orientation}Jpg`], { dimensions: { width: 160, height: 100 } });
+    const colors = await readCornerColors(prepared.bytes);
+    const expected = mirroredExifExpectations[orientation];
+    assert.strictEqual(colors.width, expected.width);
+    assert.strictEqual(colors.height, expected.height);
+    ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'].forEach((corner, index) => assertColorNear(colors[corner], expected.corners[index], `EXIF ${orientation} ${corner}`));
+  }
+  record('convertImagesToPdf mirrored EXIF', 'ok', 'normaliza as quatro orientações JPEG espelhadas sem perda de proporção');
 
   const signatureOutput = path.join(signatureDir, 'assinado.pdf');
   await applySimpleSignature(assets.smallPdf, signatureOutput, {
@@ -219,6 +374,40 @@ async function runFunctionalTests() {
   assert.strictEqual(await countPdfPages(signatureOutput), 2);
   record('applySimpleSignature', 'ok', 'assinatura visual com texto, data e selo gerou PDF válido');
 
+  const windowsSignatureFont = 'C:/Windows/Fonts/segoesc.ttf';
+  if (process.platform === 'win32' && fs.existsSync(windowsSignatureFont)) {
+    const customFontDoc = await PDFDocument.create();
+    const customFontPage = customFontDoc.addPage();
+    const customFont = await embedFont(customFontDoc, 'SegoeScript');
+    customFontPage.drawText('Thiago Rodrigues – revisão', { x: 36, y: 36, size: 14, font: customFont });
+    const customFontBytes = await customFontDoc.save();
+    const customFontReloaded = await PDFDocument.load(customFontBytes);
+    assert.strictEqual(customFontReloaded.getPageCount(), 1);
+    assert.notStrictEqual(customFont.name, 'Helvetica', 'Segoe Script deve ser incorporada, não substituída pelo fallback');
+    record('signature custom Windows font', 'ok', `Segoe Script incorporada (${customFont.name}) e PDF Unicode reaberto`);
+  } else {
+    record('signature custom Windows font', 'skipped', 'Segoe Script não está disponível neste ambiente; teste explícito, não silencioso');
+  }
+
+  const rotatedSignatureOutput = path.join(signatureDir, 'assinado-rotacionado.pdf');
+  await applySimpleSignature(assets.rotatedPdf, rotatedSignatureOutput, {
+    fields: [{
+      type: 'signature',
+      pageIndex: 0,
+      xRatio: 0.62,
+      yRatio: 0.72,
+      widthRatio: 0.28,
+      heightRatio: 0.08,
+      value: 'ORIENTATION OK',
+      fontFamily: 'CorporateSans',
+      color: '#dc2626',
+      opacity: 100,
+      rotation: 0
+    }]
+  });
+  assert.ok(await verifyRotation(rotatedSignatureOutput, 90));
+  record('applySimpleSignature rotated page', 'ok', 'assinatura preserva a rotacao preexistente da pagina');
+
   const docxConversion = await convertPdfToWord(assets.smallPdf, conversionDir, {
     format: 'docx',
     outputName: 'small-converted.docx'
@@ -265,6 +454,52 @@ async function runFunctionalTests() {
   assert.strictEqual(fs.readdirSync(watermarkImageDir).filter((file) => file.endsWith('.pdf')).length, 1);
   record('applyWatermarkBatch image', 'ok', 'marca dagua por imagem gerou saida valida');
 
+  const watermarkLandscapeDir = ensureDir(path.join(workspace, 'watermark-landscape'));
+  const watermarkLandscapeResult = await pdfService.applyWatermarkBatch([assets.landscapePng], watermarkLandscapeDir, {
+    watermarkKind: 'text',
+    text: 'HORIZONTAL',
+    fontSize: 48,
+    color: '#6e6e6e',
+    opacity: 18,
+    rotation: -25,
+    position: 'diagonal',
+    scale: 100,
+    outputSuffix: '_wm',
+    fontFamily: 'HelveticaBold',
+    sourceRotations: [0]
+  });
+  const landscapeWatermarkMetrics = await getFirstPageMetrics(watermarkLandscapeResult.createdFiles[0]);
+  assert.ok(landscapeWatermarkMetrics.width > landscapeWatermarkMetrics.height);
+
+  const watermarkRotatedDir = ensureDir(path.join(workspace, 'watermark-rotated'));
+  const watermarkRotatedResult = await pdfService.applyWatermarkBatch([assets.landscapePng], watermarkRotatedDir, {
+    watermarkKind: 'text',
+    text: 'VERTICAL',
+    fontSize: 48,
+    color: '#6e6e6e',
+    opacity: 18,
+    rotation: -25,
+    position: 'diagonal',
+    scale: 100,
+    outputSuffix: '_wm',
+    fontFamily: 'HelveticaBold',
+    sourceRotations: [90]
+  });
+  const rotatedWatermarkMetrics = await getFirstPageMetrics(watermarkRotatedResult.createdFiles[0]);
+  assert.ok(rotatedWatermarkMetrics.height > rotatedWatermarkMetrics.width);
+  record('applyWatermarkBatch source orientation', 'ok', 'paisagem e rotacao manual produzem caixas de pagina coerentes');
+
+  const redactionStampPath = path.join(workspace, 'redaction-rotated-page.png');
+  fs.copyFileSync(assets.landscapePng, redactionStampPath);
+  const redactedRotatedOutput = path.join(workspace, 'redacted-rotated.pdf');
+  await pdfService.redactPdf(assets.rotatedPdf, redactedRotatedOutput, {
+    redactedPages: [{ pageIndex: 0, imagePath: redactionStampPath }]
+  });
+  const redactedMetrics = await getFirstPageMetrics(redactedRotatedOutput);
+  assert.ok(redactedMetrics.width > redactedMetrics.height);
+  assert.strictEqual(redactedMetrics.rotation, 0);
+  record('redactPdf rotated page', 'ok', 'rasterizacao preserva a orientacao visual sem deformar a pagina');
+
   const protectOutput = path.join(workspace, 'protected.pdf');
   await pdfService.encryptPdf(assets.smallPdf, protectOutput, 'senha123');
   assert.ok(fs.existsSync(protectOutput));
@@ -283,11 +518,23 @@ async function runFunctionalTests() {
   await new Promise((resolve) => setTimeout(resolve, 200));
   await logger.exportDiagnostics(diagnosticsDir, {
     defaultOutputDir: workspace,
-    recentHistory: [{ filePath: assets.smallPdf, outputPath: mergeOutput }]
+    recentHistory: [{
+      fileName: 'cliente-CPF-12345678909-confidencial.pdf',
+      filePath: assets.smallPdf,
+      outputPath: mergeOutput,
+      outputDir: workspace,
+      errorMessage: 'CPF 123.456.789-09 em documento sigiloso'
+    }]
   }, { queueHealthy: true });
   const diagnosticsConfig = JSON.parse(fs.readFileSync(path.join(diagnosticsDir, 'config-diagnostic.json'), 'utf8'));
   const exportedOps = fs.readFileSync(path.join(diagnosticsDir, 'operations.log'), 'utf8');
   assert.strictEqual(diagnosticsConfig.defaultOutputDir, '[configured-output-dir]');
+  assert.deepStrictEqual(diagnosticsConfig.recentHistory[0], {
+    fileName: '[arquivo]', filePath: '[arquivo]', outputPath: '[arquivo-gerado]',
+    outputDir: '[configured-output-dir]', errorMessage: 'A operação não foi concluída.'
+  });
+  assert.ok(!JSON.stringify(diagnosticsConfig).includes('12345678909'));
+  assert.ok(!JSON.stringify(diagnosticsConfig).includes('sigiloso'));
   assert.ok(!exportedOps.includes(assets.smallPdf));
   assert.ok(/\[path:.*\]/.test(exportedOps) || exportedOps.includes('small.pdf'));
   record('exportDiagnostics', 'ok', 'configuracoes e logs saem sanitizados');
@@ -302,7 +549,6 @@ async function runFunctionalTests() {
   };
   const configPortable = freshConfigServiceWithElectron(electronPortable);
   const previousCwd = process.cwd();
-  const originalExecPath = process.execPath;
   const originalArgv = [...process.argv];
   const originalPortableEnv = process.env.PORTABLE_EXECUTABLE_DIR;
   process.chdir(portableRoot);

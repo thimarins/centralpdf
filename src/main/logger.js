@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { LOG_POLICY } = require('./constants');
+const { getSafeFailureCode } = require('./document-privacy');
 
 let logDir = '';
 let retentionDays = 30; // default 30 days retention
@@ -80,8 +81,8 @@ function writeLog(filename, message) {
     })
     .catch((err) => {
       // The logger can't log its own failure through itself; fall back to the console
-      // so a missing/inaccessible log directory doesn't fail completely silently.
-      console.error(`Failed to write log file ${filename}:`, err);
+      // without exposing the filesystem path or the raw error (which may contain it).
+      console.error(`Failed to write log file ${filename}: failureCode=${getSafeFailureCode(err)}`);
     });
 }
 
@@ -138,8 +139,7 @@ function logError(action, err) {
  * @param {Error|string} err The crash context
  */
 function logCrash(err) {
-  const errMsg = err instanceof Error ? err.stack : err;
-  writeLog('crashes.log', `CRITICAL: ${errMsg}`);
+  writeLog('crashes.log', `CRITICAL: failureCode=${getSafeFailureCode(err)}`);
 }
 
 /**
@@ -192,9 +192,11 @@ async function exportDiagnostics(exportPath, currentConfig, healthSummary = {}) 
   if (sanitizedConfig.recentHistory) {
     sanitizedConfig.recentHistory = sanitizedConfig.recentHistory.map(item => ({
       ...item,
-      filePath: item.filePath ? path.basename(item.filePath) : '', // only file name, hide absolute path
-      outputPath: item.outputPath ? path.basename(item.outputPath) : '',
-      outputDir: item.outputDir ? '[configured-output-dir]' : ''
+      fileName: item.fileName ? '[arquivo]' : '',
+      filePath: item.filePath ? '[arquivo]' : '',
+      outputPath: item.outputPath ? '[arquivo-gerado]' : '',
+      outputDir: item.outputDir ? '[configured-output-dir]' : '',
+      errorMessage: item.errorMessage ? 'A operação não foi concluída.' : ''
     }));
   }
   

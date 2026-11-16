@@ -57,8 +57,15 @@ async function runSecurityAudit() {
   }
 
   const mainIndex = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8');
+  const pdfService = fs.readFileSync(path.join(ROOT, 'src', 'main', 'pdf-service.js'), 'utf8');
   const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'index.js'), 'utf8');
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
+  const rendererApp = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const ocrService = fs.readFileSync(path.join(ROOT, 'src', 'main', 'services', 'ocr', 'ocr-service.js'), 'utf8');
+  const ocrAreaRenderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ui', 'ocr', 'ocr-area-extractor.js'), 'utf8');
+  const queueSource = fs.readFileSync(path.join(ROOT, 'src', 'main', 'queue.js'), 'utf8');
+  const managedTempCleanup = fs.readFileSync(path.join(ROOT, 'src', 'main', 'managed-temp-cleanup.js'), 'utf8');
+  const managedTempPaths = fs.readFileSync(path.join(ROOT, 'src', 'main', 'managed-temp-paths.js'), 'utf8');
 
   const hardeningChecks = [
     { name: 'contextIsolation', ok: /contextIsolation:\s*true/.test(mainIndex) },
@@ -68,7 +75,23 @@ async function runSecurityAudit() {
     { name: 'blocked new windows', ok: /setWindowOpenHandler\(/.test(mainIndex) },
     { name: 'navigation guard', ok: /will-navigate/.test(mainIndex) },
     { name: 'CSP present', ok: /Content-Security-Policy/.test(html) },
-    { name: 'preload allowlist shape', ok: /contextBridge\.exposeInMainWorld/.test(preload) && /ipcRenderer\.invoke/.test(preload) }
+    { name: 'preload allowlist shape', ok: /contextBridge\.exposeInMainWorld/.test(preload) && /ipcRenderer\.invoke/.test(preload) },
+    { name: 'managed temp confinement', ok: /getManagedTempDirectory/.test(mainIndex) && /sanitizeManagedTempPaths/.test(mainIndex) && /isPathInsideDirectory/.test(mainIndex) },
+    { name: 'managed temp cleanup resolves parent and rejects links', ok: /realpathSync\(path\.dirname\(absoluteTarget\)\)/.test(managedTempPaths) && /isSymbolicLink\(\)/.test(managedTempPaths) && /!targetStats\.isFile\(\)/.test(managedTempPaths) && /sanitizeManagedTempPaths\(cleanupPaths, managedTempDirectory\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'pdf-operation-worker.js'), 'utf8')) },
+    { name: 'stale managed temp cleanup is age-bounded and confined to direct files', ok: /cleanupStaleManagedTempFiles\(/.test(mainIndex) && /parentDirectory:\s*configService\.getTempPath\(\)/.test(mainIndex) && /MANAGED_TEMP_DIRECTORY_NAME\s*=\s*'central-pdf-temp'/.test(managedTempCleanup) && /stats\.mtimeMs\s*>=\s*cutoff/.test(managedTempCleanup) && /entry\.isFile\(\)/.test(managedTempCleanup) && /isSymbolicLink\(\)/.test(managedTempCleanup) && /DEFAULT_MAX_ENTRIES\s*=\s*5_000/.test(managedTempCleanup) },
+    { name: 'temporary file extension allowlist', ok: /ExtensÃ£o nÃ£o permitida para arquivo temporÃ¡rio|Extensão não permitida para arquivo temporário/.test(mainIndex) },
+    { name: 'temporary file size limit', ok: /buffer\.length > maxBytes/.test(mainIndex) },
+    { name: 'pending cancellation cleanup', ok: /task\.onCancel/.test(queueSource) && /onCancel:\s*\(\) => cleanUpTempFiles/.test(mainIndex) },
+    { name: 'OCR warns when a digital signature may be invalidated', ok: /'redact', 'ocr'/.test(mainIndex) && /signatureWarning/.test(mainIndex) && /invalidar a assinatura/.test(mainIndex) },
+    { name: 'Redaction stamp images are confined to validated managed temporary files', ok: /function validateRedactOptions[\s\S]{0,2200}sanitizeManagedTempPaths\(options\.cleanupPaths\)[\s\S]{0,1200}fs\.realpathSync\(imagePath\)[\s\S]{0,500}isPathInsideDirectory\(managedRealDirectory, realImagePath\)[\s\S]{0,500}inspectImageFile\(imagePath\)/.test(mainIndex) && /redactedPageIndexes\.has\(item\.pageIndex\)/.test(pdfService) && /item\.pageIndex >= pageCount/.test(pdfService) },
+    { name: 'Irreversible redaction raster uses lossless PNG output', ok: /canvas\.toDataURL\('image\/png'\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ui', 'redact', 'redact-workspace.js'), 'utf8')) && /saveTempFile\(\{ base64Data, extension: 'png' \}\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'ui', 'redact', 'redact-workspace.js'), 'utf8')) },
+    { name: 'Digital signature scan is asynchronous and reads bounded chunks', ok: /async function hasDigitalSignatures/.test(pdfService) && /chunkSize = 256 \* 1024/.test(pdfService) && /await handle\.read\(/.test(pdfService) && /finally\s*\{\s*await handle\?\.close\(\)/.test(pdfService) },
+    { name: 'Signature warning covers merging and OCR transformations', ok: /invalidatesDigitalSignatures = \['merge', 'files-to-pdf'/.test(mainIndex) && /'redact', 'ocr'\]/.test(mainIndex) },
+    { name: 'renderer test API is E2E-only', ok: /get-e2e-test-mode/.test(mainIndex) && /isE2ETestMode:\s*\(\)\s*=>\s*invokeOrReject\('get-e2e-test-mode'\)/.test(preload) && /if \(await window\.api\?\.isE2ETestMode\?\.\(\)\) exposeAutomatedTestApi\(\)/.test(rendererApp) },
+    { name: 'OCR area extraction is bounded and local', ok: /event\.sender !== mainWindow\.webContents/.test(mainIndex) && /activeOcrAreaJobs/.test(mainIndex) && /300_000/.test(mainIndex) && /OCR_MAX_RENDER_PIXELS/.test(ocrService) && /text:\s*rawText\.slice\(0, 20_000\)/.test(ocrService) },
+    { name: 'PDF search OCR validates caller, query and cancellation', ok: /ipcMain\.handle\('ocr-search-document'[\s\S]{0,500}event\.senderFrame !== mainWindow\.webContents\.mainFrame/.test(mainIndex) && /query\.length > 120/.test(mainIndex) && /activeOcrSearchJobs/.test(mainIndex) && /300_000/.test(mainIndex) && /job\?\.sender === event\.sender/.test(mainIndex) && /cancelActiveSearch\(\{ invalidate: true \}\)/.test(ocrAreaRenderer) },
+    { name: 'PDF-to-Word OCR analysis is bounded, cancellable, and does not return text', ok: /ipcMain\.handle\('pdf-to-word-analyze'[\s\S]{0,500}event\.senderFrame !== mainWindow\.webContents\.mainFrame/.test(mainIndex) && /PDF_TO_WORD_ANALYSIS_MAX_BYTES = 64 \* 1024 \* 1024/.test(mainIndex) && /job\?\.sender === event\.sender/.test(mainIndex) && /45_000/.test(mainIndex) && /Math\.min\(pdf\.numPages, 16\)/.test(ocrService) && /pagesLikelyScanned/.test(ocrService) },
+    { name: 'PDF search never returns extracted document text', ok: /heightRatio:\s*\(bottom - top\) \/ dimensions\.height\s*\n\s*\}/.test(ocrService) && !/text:\s*String\(text\)\.slice\(0,\s*240\)/.test(ocrService) }
   ];
   hardeningChecks.forEach((item) => checks.push({ name: item.name, status: item.ok ? 'ok' : 'warning', details: item.ok ? 'validado' : 'nao encontrado' }));
 

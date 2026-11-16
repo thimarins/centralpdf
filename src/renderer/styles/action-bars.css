@@ -1,0 +1,913 @@
+/* Shared action and toolbar controls, following SmartScan's compact control kit. */
+:root {
+  --action-button-height: 36px;
+  --action-button-height-small: 34px;
+  --action-button-height-primary: 44px;
+  --action-button-radius: 8px;
+  --action-button-gap: 8px;
+}
+
+button {
+  min-height: var(--action-button-height);
+  border-radius: var(--action-button-radius);
+  font-weight: 600;
+  box-shadow: none !important;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+button:hover {
+  box-shadow: none !important;
+}
+
+.btn-sm {
+  min-height: var(--action-button-height-small);
+  height: var(--action-button-height-small);
+  padding-inline: 11px;
+  font-size: 0.82rem;
+}
+
+.btn-primary {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-accent-color);
+}
+
+.btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--on-accent-color);
+}
+
+.btn-secondary {
+  border-color: var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.btn-danger,
+.btn-critical,
+.btn-danger-text {
+  border-color: color-mix(in srgb, var(--danger-color) 30%, var(--border-color));
+  background: color-mix(in srgb, var(--danger-soft) 72%, var(--bg-card));
+  color: var(--danger-color);
+}
+
+.btn-danger:hover:not(:disabled),
+.btn-critical:hover:not(:disabled),
+.btn-danger-text:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger-color) 60%, var(--border-color));
+  background: color-mix(in srgb, var(--danger-soft) 90%, var(--bg-card));
+  color: var(--danger-color);
+}
+
+.btn-danger-text {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn-icon-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.btn-icon-label > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* SmartScan uses a compact accent switch for every on/off preference. */
+input[type="checkbox"]:not(.page-selection-control input) {
+  appearance: none;
+  position: relative;
+  display: inline-block;
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-muted);
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+input[type="checkbox"]:not(.page-selection-control input)::before {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  content: "";
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+input[type="checkbox"]:not(.page-selection-control input):checked {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+}
+
+input[type="checkbox"]:not(.page-selection-control input):checked::before {
+  background: var(--on-accent-color);
+  transform: translateX(16px);
+}
+
+input[type="checkbox"]:not(.page-selection-control input):indeterminate::before {
+  background: var(--accent-color);
+  transform: translateX(8px);
+}
+
+input[type="checkbox"]:not(.page-selection-control input):hover:not(:disabled) {
+  border-color: var(--accent-color);
+}
+
+input[type="checkbox"]:not(.page-selection-control input):focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+}
+
+input[type="checkbox"]:not(.page-selection-control input):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.action-bar-settings .settings-inline .toggle input[type="checkbox"] {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 20px;
+  min-height: 20px;
+  transform: none;
+}
+
+.toggle {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.page-selection-control input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: -1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+.module-action-group:not(.file-selection-actions),
+.inline-actions,
+.organize-selection-actions,
+.signature-page-nav,
+.signature-input-action-row,
+.file-picker-inline,
+.signature-draw-actions,
+.signature-draw-toolbar,
+.watermark-page-nav,
+.redact-page-nav,
+.ocr-area-actions,
+.redact-search-row,
+.redact-toolbar,
+.about-actions-bar {
+  container: action-bar / inline-size;
+  gap: var(--action-button-gap);
+}
+
+.module-action-group:not(.file-selection-actions) > button,
+.inline-actions > button,
+.organize-selection-actions > button,
+.signature-page-nav > button,
+.signature-draw-toolbar > button,
+.ocr-area-actions > button,
+.redact-search-row > button,
+.redact-toolbar > button,
+.about-actions-bar > button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* File selection action buttons: "Adicionar arquivos" and "Limpar" must never shrink, overlap, or blink */
+.file-selection-actions,
+.ocr-file-actions {
+  container: none !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: nowrap !important;
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  gap: 8px !important;
+}
+
+.file-selection-actions > button,
+.ocr-file-actions > button {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 14px !important;
+  gap: 7px !important;
+  white-space: nowrap !important;
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+.file-selection-actions > button > span,
+.ocr-file-actions > button > span {
+  display: inline-block !important;
+  white-space: nowrap !important;
+  font-size: 0.8125rem !important;
+}
+
+.file-selection-actions > button > svg,
+.ocr-file-actions > button > svg {
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+}
+
+/* The primary task stays obvious and easy to hit across every module. */
+.module-action-group--primary .btn-primary,
+.module-output-dock .module-action-group--primary .btn-primary {
+  min-height: var(--action-button-height-primary);
+  padding-inline: 18px;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.module-output-dock .module-action-group--primary .btn-primary {
+  box-shadow: none !important;
+}
+
+/* Quiet, consistent search actions: the text field carries the visual weight. */
+.split-content-search,
+.ocr-document-search {
+  column-gap: 8px;
+  row-gap: 6px;
+}
+
+.split-content-search .btn-sm,
+.ocr-document-search .btn-sm,
+.redact-search-row .btn-sm {
+  min-width: 88px;
+  min-height: var(--action-button-height-small);
+  height: var(--action-button-height-small);
+  align-self: end;
+}
+
+.split-content-search .input-group > input,
+.ocr-document-search .input-group > input {
+  min-height: 36px;
+  height: 36px;
+  padding-block: 6px;
+}
+
+.organize-document-search {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ocr-document-search[data-action-toolbar],
+.split-content-search[data-action-toolbar],
+.redact-search-row[data-action-toolbar] {
+  min-height: 46px;
+  padding: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--bg-card);
+}
+
+.ocr-document-search[data-action-toolbar] .input-group,
+.split-content-search[data-action-toolbar] .input-group {
+  flex: 1 1 220px;
+  min-width: 140px;
+}
+
+.ocr-document-search[data-action-toolbar] .input-group > input,
+.split-content-search[data-action-toolbar] .input-group > input,
+.redact-search-row[data-action-toolbar] > input {
+  min-height: 34px;
+  height: 34px;
+}
+
+.ocr-document-search[data-action-toolbar] > .btn-icon-label,
+.split-content-search[data-action-toolbar] > .btn-icon-label,
+.redact-search-row[data-action-toolbar] > .btn-icon-label {
+  min-width: 34px;
+  min-height: 34px;
+  height: 34px;
+  padding-inline: 10px;
+}
+
+/* Organize command bar: all page actions, search and thumbnail size on a single compact bar (SmartScan style). */
+.organize-command-bar {
+  container-type: inline-size;
+  container-name: organizebar;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  width: 100% !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--bg-card) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin !important;
+}
+
+.organize-toolbar-actions {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  flex: 0 0 auto !important;
+  gap: 4px !important;
+  min-width: max-content !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* In SmartScan icon toolbars, cluster text labels are hidden to keep the single bar clean */
+.organize-toolbar-actions .toolbar-cluster-label {
+  display: none !important;
+}
+
+.organize-toolbar-actions .toolbar-action-cluster {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  flex: 0 0 auto !important;
+  gap: 3px !important;
+  min-width: max-content !important;
+  padding: 0 !important;
+}
+
+.organize-toolbar-actions .toolbar-action-cluster + .toolbar-action-cluster {
+  margin-left: 4px !important;
+  padding-left: 8px !important;
+  border-left: 1px solid var(--border-color) !important;
+}
+
+.organize-toolbar-actions .module-action-group {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  flex: 0 0 auto !important;
+  gap: 3px !important;
+  min-width: max-content !important;
+  width: auto !important;
+  justify-content: flex-start !important;
+  container: none !important;
+}
+
+/* Icon-only action buttons: sleek, compact, centered icons (SmartScan style) */
+.organize-toolbar-actions .module-action-group > button,
+.organize-toolbar-actions .module-action-group .btn-icon-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 32px !important;
+  width: 32px !important;
+  min-width: 32px !important;
+  max-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  font-size: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 7px !important;
+  background: color-mix(in srgb, var(--bg-card) 60%, var(--bg-muted)) !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast) !important;
+}
+
+/* Base: hide text label for icon-only buttons so it never spills over */
+.organize-toolbar-actions .module-action-group .btn-icon-label > span {
+  display: none !important;
+  font-size: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.organize-toolbar-actions .module-action-group .btn-icon-label > svg {
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 auto !important;
+}
+
+.organize-toolbar-actions .module-action-group .btn-icon-label:hover:not(:disabled) {
+  border-color: var(--border-strong) !important;
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.organize-toolbar-actions .action-toolbar-separator {
+  display: inline-block !important;
+  flex: 0 0 1px !important;
+  width: 1px !important;
+  height: 20px !important;
+  margin-inline: 4px !important;
+  background: var(--border-color) !important;
+}
+
+/* Critical action buttons (Excluir, Limpar): always prominent with icon + text label */
+.organize-toolbar-actions .btn-critical,
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-critical {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 32px !important;
+  max-width: none !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  border-color: color-mix(in srgb, var(--danger-color) 35%, var(--border-color)) !important;
+  background: color-mix(in srgb, var(--danger-soft) 72%, var(--bg-card)) !important;
+  color: var(--danger-color) !important;
+}
+
+.organize-toolbar-actions .btn-critical > span,
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-critical > span {
+  display: inline-block !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  max-width: none !important;
+  overflow: visible !important;
+  line-height: 1 !important;
+}
+
+.organize-toolbar-actions .btn-critical > svg,
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-critical > svg {
+  flex: 0 0 15px !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin: 0 !important;
+}
+
+.organize-toolbar-actions .btn-critical:hover:not(:disabled),
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-critical:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger-color) 65%, var(--border-color)) !important;
+  background: color-mix(in srgb, var(--danger-soft) 95%, var(--bg-card)) !important;
+  color: var(--danger-color) !important;
+}
+
+/* Primary extraction button: icon + text label */
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-accent-outline {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 32px !important;
+  max-width: none !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color)) !important;
+  color: var(--accent-color) !important;
+}
+
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-accent-outline > span {
+  display: inline-block !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  max-width: none !important;
+  overflow: visible !important;
+  line-height: 1 !important;
+}
+
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-accent-outline > svg {
+  flex: 0 0 15px !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin: 0 !important;
+}
+
+.organize-toolbar-actions .module-action-group .btn-icon-label.btn-accent-outline:hover:not(:disabled) {
+  border-color: var(--accent-color) !important;
+  background: var(--accent-soft) !important;
+}
+
+/* Primary add file button: icon + text label */
+.organize-toolbar-actions .module-action-group #btn-organize-add-file {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 32px !important;
+  max-width: none !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+.organize-toolbar-actions .module-action-group #btn-organize-add-file > span {
+  display: inline-block !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  max-width: none !important;
+  overflow: visible !important;
+  line-height: 1 !important;
+}
+
+.organize-toolbar-actions .module-action-group #btn-organize-add-file > svg {
+  flex: 0 0 15px !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin: 0 !important;
+}
+
+/* Large monitors (>= 1350px): expand rotate and duplicate */
+@media (min-width: 1350px) {
+  .organize-toolbar-actions .module-action-group #btn-organize-rotate-selected,
+  .organize-toolbar-actions .module-action-group #btn-organize-duplicate-selected {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 32px !important;
+    max-width: none !important;
+    padding: 0 10px !important;
+    gap: 6px !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+  }
+  .organize-toolbar-actions .module-action-group #btn-organize-rotate-selected > span,
+  .organize-toolbar-actions .module-action-group #btn-organize-duplicate-selected > span {
+    display: inline-block !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+    line-height: 1 !important;
+  }
+  .organize-toolbar-actions .module-action-group #btn-organize-rotate-selected > svg,
+  .organize-toolbar-actions .module-action-group #btn-organize-duplicate-selected > svg {
+    margin: 0 !important;
+  }
+}
+
+/* Wide monitors (>= 1650px): expand all organize action buttons */
+@media (min-width: 1650px) {
+  .organize-toolbar-actions .module-action-group .btn-icon-label {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 32px !important;
+    max-width: none !important;
+    padding: 0 9px !important;
+    gap: 5px !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+  }
+  .organize-toolbar-actions .module-action-group .btn-icon-label > span {
+    display: inline-block !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+    line-height: 1 !important;
+  }
+  .organize-toolbar-actions .module-action-group .btn-icon-label > svg {
+    margin: 0 !important;
+  }
+}
+
+/* Organize search & thumbnail view controls: inline on the right of the same bar */
+.organize-command-search {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  margin-left: auto !important;
+  padding: 0 0 0 10px !important;
+  border-top: none !important;
+  border-left: 1px solid var(--border-color) !important;
+  flex-shrink: 0 !important;
+}
+
+.organize-search-input-label {
+  display: block !important;
+  flex: 1 1 180px !important;
+  min-width: 120px !important;
+  max-width: 240px !important;
+  margin: 0 !important;
+}
+
+.organize-search-input-label > input {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 7px !important;
+  background: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+  font-size: 0.78rem !important;
+}
+
+/* Search and cancel buttons */
+.organize-command-search > .btn-icon-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 32px !important;
+  width: 32px !important;
+  min-width: 32px !important;
+  max-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  font-size: 0 !important;
+  border-radius: 7px !important;
+  border: 1px solid var(--border-color) !important;
+  background: color-mix(in srgb, var(--bg-card) 60%, var(--bg-muted)) !important;
+}
+
+.organize-command-search > .btn-icon-label > span {
+  display: none !important;
+}
+
+.organize-command-search > .btn-icon-label > svg {
+  flex: 0 0 15px !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin: 0 auto !important;
+}
+
+.organize-view-switch {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 3px !important;
+  margin-left: 6px !important;
+  padding-left: 8px !important;
+  border-left: 1px solid var(--border-color) !important;
+}
+
+/* Thumbnail view switch buttons */
+.organize-command-search .organize-view-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 30px !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  font-size: 0 !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--border-color) !important;
+  background: color-mix(in srgb, var(--bg-card) 60%, var(--bg-muted)) !important;
+}
+
+.organize-command-search .organize-view-button > span {
+  display: none !important;
+}
+
+.organize-command-search .organize-view-button[aria-pressed="true"] {
+  border-color: var(--accent-color) !important;
+  background: var(--accent-color) !important;
+  color: var(--on-accent-color) !important;
+}
+
+/* Organize toolbar is icon-only (SmartScan style): clean, sleek, never overlaps or collides. */
+
+.organize-command-search .organize-view-button > svg {
+  flex: 0 0 14px !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 auto !important;
+}
+
+.action-toolbar-separator {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 22px;
+  margin-inline: 3px;
+  background: var(--border-color);
+}
+
+.has-action-overflow {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: var(--action-button-gap);
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.has-action-overflow > button:not(.action-overflow-trigger) {
+  flex: 0 0 auto !important;
+  white-space: nowrap;
+}
+
+.has-action-overflow.action-toolbar-icon-only {
+  gap: 3px;
+}
+
+.action-toolbar-icon-only .btn-icon-label,
+.has-action-overflow .action-icon-only {
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 !important;
+  gap: 0 !important;
+  font-size: 0 !important;
+}
+
+.action-toolbar-icon-only .btn-icon-label > span:last-child,
+.has-action-overflow .action-icon-only > span:last-child {
+  display: none !important;
+}
+
+.action-toolbar-icon-only .btn-icon-label > svg,
+.has-action-overflow .action-icon-only > svg {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+}
+
+.has-action-overflow .action-overflow-hidden {
+  display: none !important;
+}
+
+.action-overflow-trigger {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 34px !important;
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.action-overflow-trigger:hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.action-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 160;
+  display: grid;
+  min-width: 210px;
+  max-width: min(320px, calc(100vw - 24px));
+  max-height: min(60vh, 420px);
+  gap: 3px;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.action-overflow-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+  font-size: 0.82rem;
+}
+
+.action-overflow-item > svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.action-overflow-item:hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+}
+
+.action-overflow-item--critical {
+  color: var(--danger-color);
+}
+
+/* The action-toolbar controller decides per button when its label no longer fits.
+   A container query on each nested button group hid every label at once. */
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.organize-search-input-label > input {
+  border-color: transparent;
+  background: transparent;
+}
+
+.organize-search-input-label > input:focus,
+.organize-search-input-label > input:focus-visible {
+  border-color: var(--accent-color);
+  background: var(--bg-app);
+}
+
+@media (max-width: 640px) {
+  .split-content-search,
+  .ocr-document-search {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .split-content-search .input-group,
+  .ocr-document-search .input-group {
+    grid-column: 1 / -1;
+  }
+
+  .action-bar-settings .module-action-group--primary .btn-primary {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

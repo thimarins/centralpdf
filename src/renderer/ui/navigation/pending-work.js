@@ -37,7 +37,7 @@
     return getWatermarkPendingMessage() || "";
   }
 
-  if (tabId === "organize" && (state.organizeFile || state.organizePages.length > 0)) {
+  if (tabId === "organize" && (state.organizeFiles.length > 0 || state.organizePages.length > 0)) {
     return "Há páginas carregadas em Organizar Páginas. Se sairmos agora, essa preparação será perdida.";
   }
 

@@ -46,30 +46,6 @@ export function bindAboutDiagnosticActions({ container, aboutInfo, windowApi, no
     }
   };
 
-  const revealPath = async (targetPath, fallbackTitle, fallbackDirectory = "") => {
-    if (!targetPath) {
-      notify({
-        tone: "warning",
-        title: fallbackTitle,
-        message: "Esse caminho não está disponível neste ambiente."
-      });
-      return;
-    }
-
-    try {
-      const result = await windowApi.revealPath(targetPath);
-      if (!result.success) {
-        notify({
-          tone: "error",
-          title: fallbackTitle,
-          message: result.error || "Não foi possível localizar o item informado."
-        });
-      }
-    } catch {
-      await openFolder(fallbackDirectory || targetPath, fallbackTitle);
-    }
-  };
-
   const copySystemInfo = async () => {
     const lines = [
       `${aboutInfo.app.name}`,

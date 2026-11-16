@@ -1,3 +1,5 @@
+import { formatDocumentMeta } from '../document-info.js';
+
 export function createUnlockWorkspaceController(deps) {
   const {
     state,
@@ -36,7 +38,7 @@ export function createUnlockWorkspaceController(deps) {
 
     if (hasFile) {
       if (nameEl) nameEl.textContent = state.unlockFile.name;
-      if (metaEl) metaEl.textContent = formatBytes(state.unlockFile.size);
+      if (metaEl) metaEl.textContent = formatDocumentMeta(formatBytes, state.unlockFile);
       const cleanName = state.unlockFile.name.replace(/\.pdf$/i, "");
       if (outputInput) outputInput.value = `${cleanName}_desbloqueado.pdf`;
     } else {

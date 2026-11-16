@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const UTIF = require('utif');
 const PDF_LIMITS = {
   warningBytes: 300 * 1024 * 1024,
   heavyModeBytes: 1024 * 1024 * 1024,
@@ -9,7 +10,8 @@ const PDF_LIMITS = {
 const IMAGE_LIMITS = {
   maxImageBytes: 25 * 1024 * 1024,
   maxSvgBytes: 5 * 1024 * 1024,
-  maxRasterPixels: 64 * 1024 * 1024
+  maxRasterPixels: 64 * 1024 * 1024,
+  maxOcrPagePixels: 32_000_000
 };
 
 function readFileSlice(filePath, offset, length) {
@@ -140,6 +142,8 @@ function sanitizeFilename(filename) {
   // Remove directory paths to prevent traversal
   let baseName = path.basename(filename);
   // Replace invalid characters: \ / : * ? " < > | and control characters
+  // Control characters are intentionally removed as part of filename hardening.
+  // eslint-disable-next-line no-control-regex
   baseName = baseName.replace(/[\\/:*?"<>|\x00-\x1F\x7F]/g, '_');
   // Avoid reserved Windows names
   const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)$/i;
@@ -224,13 +228,15 @@ function parseJpegDimensions(buffer) {
   return null;
 }
 
-function inspectImageBuffer(buffer, extension) {
+function inspectImageBuffer(buffer, extension, maxRasterPixels = IMAGE_LIMITS.maxRasterPixels) {
   const normalizedExt = String(extension || '').toLowerCase();
   if (normalizedExt === '.png') {
     const dimensions = parsePngDimensions(buffer);
     if (!dimensions) return { ok: false, reason: 'invalid-png' };
+    const pixelCount = dimensions.width * dimensions.height;
     return {
-      ok: dimensions.width > 0 && dimensions.height > 0 && (dimensions.width * dimensions.height) <= IMAGE_LIMITS.maxRasterPixels,
+      ok: dimensions.width > 0 && dimensions.height > 0 && pixelCount <= maxRasterPixels,
+      ...(pixelCount > maxRasterPixels ? { reason: 'pixel-limit' } : {}),
       kind: 'png',
       dimensions
     };
@@ -239,8 +245,10 @@ function inspectImageBuffer(buffer, extension) {
   if (normalizedExt === '.jpg' || normalizedExt === '.jpeg') {
     const dimensions = parseJpegDimensions(buffer);
     if (!dimensions) return { ok: false, reason: 'invalid-jpeg' };
+    const pixelCount = dimensions.width * dimensions.height;
     return {
-      ok: dimensions.width > 0 && dimensions.height > 0 && (dimensions.width * dimensions.height) <= IMAGE_LIMITS.maxRasterPixels,
+      ok: dimensions.width > 0 && dimensions.height > 0 && pixelCount <= maxRasterPixels,
+      ...(pixelCount > maxRasterPixels ? { reason: 'pixel-limit' } : {}),
       kind: 'jpeg',
       dimensions
     };
@@ -249,7 +257,7 @@ function inspectImageBuffer(buffer, extension) {
   return { ok: false, reason: 'unsupported-image' };
 }
 
-function inspectImageFile(filePath, maxSizeBytes = IMAGE_LIMITS.maxImageBytes) {
+function inspectImageFile(filePath, maxSizeBytes = IMAGE_LIMITS.maxImageBytes, maxRasterPixels = IMAGE_LIMITS.maxRasterPixels) {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     return { ok: false, reason: 'path' };
   }
@@ -259,6 +267,26 @@ function inspectImageFile(filePath, maxSizeBytes = IMAGE_LIMITS.maxImageBytes) {
     const extension = path.extname(filePath).toLowerCase();
     if (!stats.isFile() || stats.size > maxSizeBytes) {
       return { ok: false, reason: 'size' };
+    }
+
+    if (extension === '.tif' || extension === '.tiff') {
+      const tiff = fs.readFileSync(filePath);
+      const ifds = UTIF.decode(tiff.buffer.slice(tiff.byteOffset, tiff.byteOffset + tiff.byteLength));
+      if (!ifds.length || ifds.length > 1000) return { ok: false, reason: 'tiff-page-count' };
+      let totalPixels = 0;
+      for (const ifd of ifds) {
+        const width = Number(ifd.width || ifd.t256?.[0] || 0);
+        const height = Number(ifd.height || ifd.t257?.[0] || 0);
+        if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
+          return { ok: false, reason: 'tiff-dimensions' };
+        }
+        if (width * height > maxRasterPixels) return { ok: false, reason: 'tiff-page-pixel-limit' };
+        totalPixels += width * height;
+        if (!Number.isSafeInteger(totalPixels) || totalPixels > IMAGE_LIMITS.maxRasterPixels) {
+          return { ok: false, reason: 'tiff-pixel-limit' };
+        }
+      }
+      return { ok: true, kind: 'tiff', pageCount: ifds.length, totalPixels };
     }
 
     if (extension === '.svg') {
@@ -274,7 +302,7 @@ function inspectImageFile(filePath, maxSizeBytes = IMAGE_LIMITS.maxImageBytes) {
     }
 
     const header = readFileSlice(filePath, 0, 512 * 1024);
-    return inspectImageBuffer(header, extension);
+    return inspectImageBuffer(header, extension, maxRasterPixels);
   } catch (err) {
     return { ok: false, reason: err.message };
   }
@@ -379,5 +407,6 @@ module.exports = {
   hasPdfEncryptionDictionaryAsync,
   inspectPdfFile,
   inspectPdfFileAsync,
+  inspectImageBuffer,
   inspectImageFile
 };

@@ -31,10 +31,6 @@ function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function svgToDataUrl(svg) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
 function makeIcoFromPngBuffers(buffers, sizes) {
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);

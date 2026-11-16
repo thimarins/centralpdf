@@ -3,6 +3,7 @@ const path = require('path');
 const { PDFDocument, degrees, rgb } = require('pdf-lib');
 const { inspectConvertibleImage } = require('./image-validation');
 const { sanitizeFilename } = require('../../utils');
+const { AUTO_IMAGE_MAX_DIMENSION, AUTO_JPEG_QUALITY, normalizeQuarterTurn } = require('../../image-processing');
 
 const A4_PAGE = {
   portrait: { width: 595.28, height: 841.89 },
@@ -10,8 +11,7 @@ const A4_PAGE = {
 };
 
 const SAFE_MARGIN = 28;
-const AUTO_IMAGE_MAX_DIMENSION = 2200;
-const AUTO_JPEG_QUALITY = 82;
+const MIRRORED_EXIF_ORIENTATIONS = new Set([2, 4, 5, 7]);
 
 function ensureNotCancelled(isCancelled) {
   if (typeof isCancelled === 'function' && isCancelled()) {
@@ -46,7 +46,7 @@ async function validateGeneratedPdf(tempPath) {
     const bytes = await fs.promises.readFile(tempPath);
     await PDFDocument.load(bytes, { ignoreEncryption: true });
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -146,27 +146,47 @@ function parseJpegExifOrientation(buffer) {
   return 1;
 }
 
-function getEffectiveDimensions(dimensions = {}, orientation = 1) {
-  const width = Number(dimensions.width || 1);
-  const height = Number(dimensions.height || 1);
-  if ([5, 6, 7, 8].includes(orientation)) {
-    return { width: height, height: width };
-  }
-  return { width, height };
+function getOrientationRotation(orientation = 1) {
+  if (orientation === 3) return 180;
+  if (orientation === 6) return 90;
+  if (orientation === 8) return 270;
+  return 0;
 }
 
-function resolveImageDrawOptions(placement, orientation = 1) {
-  if (orientation === 3) {
-    return {
-      x: placement.x + placement.width,
-      y: placement.y + placement.height,
-      width: placement.width,
-      height: placement.height,
-      rotate: degrees(180)
-    };
-  }
+async function normalizeMirroredJpegOrientation(originalBytes, orientation) {
+  if (!MIRRORED_EXIF_ORIENTATIONS.has(orientation)) return null;
 
-  if (orientation === 6) {
+  const { createCanvas, loadImage } = require('@napi-rs/canvas');
+  const source = await loadImage(originalBytes);
+  const sourceWidth = Math.max(1, Number(source.width) || 1);
+  const sourceHeight = Math.max(1, Number(source.height) || 1);
+  const canvas = createCanvas(sourceWidth, sourceHeight);
+  const context = canvas.getContext('2d');
+
+  // The raster decoder applies EXIF before drawing. Exporting that decoded
+  // image to PNG removes the mirrored EXIF metadata while preserving its
+  // visual orientation for pdf-lib.
+  context.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+  return {
+    bytes: Buffer.from(canvas.toBuffer('image/png')),
+    extension: '.png',
+    orientation: 1,
+    dimensions: { width: sourceWidth, height: sourceHeight }
+  };
+}
+
+function getRotatedDimensions(dimensions = {}, rotation = 0) {
+  const width = Math.max(1, Number(dimensions.width) || 1);
+  const height = Math.max(1, Number(dimensions.height) || 1);
+  const normalizedRotation = normalizeQuarterTurn(rotation);
+  return normalizedRotation === 90 || normalizedRotation === 270
+    ? { width: height, height: width }
+    : { width, height };
+}
+
+function resolveRotatedImageDrawOptions(placement, rotation = 0) {
+  const normalizedRotation = normalizeQuarterTurn(rotation);
+  if (normalizedRotation === 90) {
     return {
       x: placement.x + placement.width,
       y: placement.y,
@@ -175,8 +195,16 @@ function resolveImageDrawOptions(placement, orientation = 1) {
       rotate: degrees(90)
     };
   }
-
-  if (orientation === 8) {
+  if (normalizedRotation === 180) {
+    return {
+      x: placement.x + placement.width,
+      y: placement.y + placement.height,
+      width: placement.width,
+      height: placement.height,
+      rotate: degrees(180)
+    };
+  }
+  if (normalizedRotation === 270) {
     return {
       x: placement.x,
       y: placement.y + placement.height,
@@ -185,7 +213,6 @@ function resolveImageDrawOptions(placement, orientation = 1) {
       rotate: degrees(270)
     };
   }
-
   return {
     x: placement.x,
     y: placement.y,
@@ -204,14 +231,20 @@ async function prepareImageForPdf(filePath, inspection = {}) {
   const originalOrientation = extension === '.jpg' || extension === '.jpeg'
     ? parseJpegExifOrientation(originalBytes)
     : 1;
-  const originalDimensions = getEffectiveDimensions(inspection.dimensions, originalOrientation);
+  const originalDimensions = {
+    width: Math.max(1, Number(inspection.dimensions?.width) || 1),
+    height: Math.max(1, Number(inspection.dimensions?.height) || 1)
+  };
 
-  let nativeImageModule = null;
+  const normalizedMirroredImage = await normalizeMirroredJpegOrientation(originalBytes, originalOrientation);
+  if (normalizedMirroredImage) {
+    return normalizedMirroredImage;
+  }
+
+  let nativeImageModule;
   try {
     nativeImageModule = require('electron').nativeImage;
-  } catch (_) {
-    nativeImageModule = null;
-  }
+  } catch {}
 
   if (!nativeImageModule) {
     return {
@@ -305,7 +338,7 @@ async function embedPreparedImage(pdfDoc, preparedImage) {
   };
 }
 
-async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () => {}, isCancelled = () => false) {
+async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () => {}, isCancelled = () => false, options = {}) {
   const inspections = inputPaths.map((filePath) => inspectConvertibleImage(filePath));
   const invalid = inspections.find((inspection) => !inspection.ok);
   if (invalid) {
@@ -320,7 +353,9 @@ async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () =>
     const inspection = inspections[index];
     const preparedImage = await prepareImageForPdf(inputPath, inspection);
     const { image, orientation, dimensions } = await embedPreparedImage(pdfDoc, preparedImage);
-    const effectiveDimensions = getEffectiveDimensions(dimensions, orientation);
+    const manualRotation = normalizeQuarterTurn(options.sourceRotations?.[index]);
+    const combinedRotation = normalizeQuarterTurn(getOrientationRotation(orientation) + manualRotation);
+    const effectiveDimensions = getRotatedDimensions(dimensions, combinedRotation);
     const pageBox = resolvePageBox(effectiveDimensions);
     const page = pdfDoc.addPage([pageBox.width, pageBox.height]);
     const placement = fitInsidePage(effectiveDimensions.width, effectiveDimensions.height, pageBox.width, pageBox.height);
@@ -332,7 +367,7 @@ async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () =>
       height: pageBox.height,
       color: rgb(1, 1, 1)
     });
-    page.drawImage(image, resolveImageDrawOptions(placement, orientation));
+    page.drawImage(image, resolveRotatedImageDrawOptions(placement, combinedRotation));
 
     const itemProgress = Math.round(((index + 1) / inputPaths.length) * 100);
     updateProgress({
@@ -342,6 +377,9 @@ async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () =>
       totalItems: inputPaths.length,
       currentItemName: path.basename(inputPath)
     });
+    if ((index + 1) % 4 === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   ensureNotCancelled(isCancelled);
@@ -355,5 +393,6 @@ async function convertImagesToPdf(inputPaths, outputPath, updateProgress = () =>
 }
 
 module.exports = {
-  convertImagesToPdf
+  convertImagesToPdf,
+  prepareImageForPdf
 };

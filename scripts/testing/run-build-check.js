@@ -27,9 +27,54 @@ async function runBuildCheck(options = {}) {
   const forceRebuild = options.forceRebuild === true;
   const checks = [];
   const packageInfo = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const builderInfo = JSON.parse(fs.readFileSync(path.join(ROOT, 'electron-builder.json'), 'utf8'));
   const releaseVersion = String(packageInfo.releaseVersion || packageInfo.version || '');
+  const expectedOcrLanguages = ['por.traineddata', 'eng.traineddata'];
+  const appFilePatterns = builderInfo.files || [];
+  const rendererRootIsPackaged = appFilePatterns.some((pattern) =>
+    typeof pattern === 'string' && /^!?dist\/\*\*$/.test(pattern));
+  checks.push({
+    name: 'renderer root files included in app package',
+    ok: rendererRootIsPackaged,
+    details: rendererRootIsPackaged
+      ? 'dist/** inclui dist/index.html e os arquivos em subpastas'
+      : 'a regra de empacotamento deve incluir dist/**; dist/**/* sozinho omite dist/index.html'
+  });
+  const startupSmokeSource = fs.readFileSync(path.join(ROOT, 'scripts', 'testing', 'run-packaged-startup-smoke.js'), 'utf8');
+  const startupSmokeHarnessIsSelfManaged =
+    !startupSmokeSource.includes('CENTRAL_PDF_STARTUP_SMOKE_AUTO_QUIT')
+    && startupSmokeSource.includes('stopProcessTree(child)')
+    && startupSmokeSource.includes('Math.min(90_000, Math.max(5_000, requestedTimeoutMs))')
+    && /const timeoutMs = Number\.isFinite\(requestedTimeoutMs\)[\s\S]*?: 90_000;/.test(startupSmokeSource);
+  checks.push({
+    name: 'packaged startup smoke lifecycle',
+    ok: startupSmokeHarnessIsSelfManaged,
+    details: startupSmokeHarnessIsSelfManaged
+      ? 'o harness não altera o ciclo de vida do app e encerra a árvore após validar bootstrap'
+      : 'o smoke deve aguardar bootstrap sem injetar autoencerramento no app e limpar a árvore no harness'
+  });
+  const ocrSourceDir = path.join(ROOT, 'vendor', 'ocr', 'tessdata');
+  const ocrSourceFilesPresent = expectedOcrLanguages.every((name) => {
+    const filePath = path.join(ocrSourceDir, name);
+    return fs.existsSync(filePath) && fs.statSync(filePath).size >= 100_000;
+  });
+  const ocrResourceConfigured = (builderInfo.extraResources || []).some((item) => item.from === 'vendor/ocr' && item.to === 'ocr');
+  checks.push({ name: 'OCR offline resources configured', ok: ocrResourceConfigured && ocrSourceFilesPresent, details: `vendor/ocr → resources/ocr; por/eng=${ocrSourceFilesPresent ? 'presentes' : 'ausentes ou inválidos'}` });
+  const ocrLicenseResources = [
+    { from: 'node_modules/tesseract.js/LICENSE.md', to: 'ocr/licenses/tesseract.js-LICENSE.md' },
+    { from: 'node_modules/tesseract.js-core/LICENSE', to: 'ocr/licenses/tesseract.js-core-LICENSE' },
+    { from: 'node_modules/tesseract.js-core/LICENSE', to: 'ocr/licenses/Apache-2.0.txt' }
+  ];
+  const ocrLicenseSourcesPresent = ocrLicenseResources.every(({ from }) => fs.existsSync(path.join(ROOT, from)));
+  const ocrLicenseMappingsPresent = ocrLicenseResources.every(({ from, to }) =>
+    (builderInfo.extraResources || []).some((item) => item.from === from && item.to === to));
+  checks.push({
+    name: 'OCR license notices configured',
+    ok: ocrLicenseSourcesPresent && ocrLicenseMappingsPresent,
+    details: `motor, núcleo e Apache-2.0 para os modelos: ${ocrLicenseSourcesPresent && ocrLicenseMappingsPresent ? 'fontes e cópias configuradas' : 'fonte ou mapeamento ausente'}`
+  });
 
-  let buildResult = { ok: false, stderr: '', stdout: '' };
+  let buildResult;
   if (process.platform === 'win32') {
     const tempBuildDir = path.join(os.tmpdir(), 'central-pdf-build-temp-' + Date.now());
     try {
@@ -97,6 +142,8 @@ async function runBuildCheck(options = {}) {
   const mapFiles = distFiles.filter((file) => file.endsWith('.map'));
   const distSize = distFiles.reduce((sum, file) => sum + fs.statSync(file).size, 0);
   checks.push({ name: 'dist files present', ok: distFiles.length > 0, details: `${distFiles.length} arquivo(s) em dist` });
+  const rendererEntryPresent = fs.existsSync(path.join(ROOT, 'dist', 'index.html'));
+  checks.push({ name: 'renderer entry present', ok: rendererEntryPresent, details: rendererEntryPresent ? 'dist/index.html encontrado' : 'dist/index.html ausente' });
   checks.push({ name: 'no sourcemaps in dist', ok: mapFiles.length === 0, details: mapFiles.length === 0 ? 'nenhum sourcemap encontrado' : `${mapFiles.length} sourcemap(s)` });
   checks.push({ name: 'dist size snapshot', ok: true, details: formatBytes(distSize) });
 
@@ -125,6 +172,16 @@ async function runBuildCheck(options = {}) {
     const latestMsi = path.join(ROOT, 'releases', 'latest', 'Central-PDF-win-x64.msi');
     checks.push({ name: 'latest unpacked exe', ok: fs.existsSync(latestUnpackedExe), details: latestUnpackedExe });
     checks.push({ name: 'latest msi', ok: fs.existsSync(latestMsi), details: latestMsi });
+    const packagedOcrDir = path.join(ROOT, 'releases', 'latest', 'Central-PDF-win-x64-unpacked', 'resources', 'ocr', 'tessdata');
+    const packagedOcrFilesPresent = expectedOcrLanguages.every((name) => {
+      const filePath = path.join(packagedOcrDir, name);
+      return fs.existsSync(filePath) && fs.statSync(filePath).size >= 100_000;
+    });
+    checks.push({ name: 'OCR models in Windows package', ok: packagedOcrFilesPresent, details: `resources/ocr/tessdata por+eng ${packagedOcrFilesPresent ? 'presentes' : 'ausentes ou inválidos'}` });
+    const packagedOcrLicenseDir = path.join(ROOT, 'releases', 'latest', 'Central-PDF-win-x64-unpacked', 'resources', 'ocr', 'licenses');
+    const packagedOcrLicensesPresent = ['tesseract.js-LICENSE.md', 'tesseract.js-core-LICENSE', 'Apache-2.0.txt']
+      .every((name) => fs.existsSync(path.join(packagedOcrLicenseDir, name)) && fs.statSync(path.join(packagedOcrLicenseDir, name)).size > 1000);
+    checks.push({ name: 'OCR license notices in Windows package', ok: packagedOcrLicensesPresent, details: `resources/ocr/licenses ${packagedOcrLicensesPresent ? 'com os três avisos' : 'incompleta ou ausente'}` });
   }
 
   const reportPath = writeReport('build-report.md', [

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 
 // Force 90% zoom factor on the web frame
 webFrame.setZoomFactor(0.9);
@@ -25,21 +25,39 @@ function invokeOrReject(channel, ...args) {
 
 // Safe APIs exposed to the renderer (strictly mediated)
 contextBridge.exposeInMainWorld('api', {
+  isE2ETestMode: () => invokeOrReject('get-e2e-test-mode'),
   // Config & Preferences
   getAppMeta: () => invokeOrReject('get-app-meta'),
   getConfig: () => invokeOrReject('get-config'),
+  getSystemAppearance: () => invokeOrReject('get-system-appearance'),
   getAboutInfo: () => invokeOrReject('get-about-info'),
+  findRecentUploadFiles: (extensions) => invokeOrReject('find-recent-upload-files', extensions),
   updateTheme: (theme) => invokeOrReject('update-theme', theme),
   updateColorTheme: (color) => invokeOrReject('update-color-theme', color),
   updateOutputDir: (dir) => invokeOrReject('update-output-dir', dir),
+  updateOpenOutputAutomatically: (enabled) => invokeOrReject('update-open-output-automatically', enabled),
   recordHistoryEntry: (entry) => invokeOrReject('record-history-entry', entry),
   clearRecentHistory: () => invokeOrReject('clear-recent-history'),
   
   // Dialog operations
   selectDirectory: () => invokeOrReject('select-directory'),
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch (_) {
+      return '';
+    }
+  },
 
   // Processing queue
   queueOperation: (payload) => invokeOrReject('queue-operation', payload),
+  analyzePdfForWordOcr: (payload) => invokeOrReject('pdf-to-word-analyze', payload),
+  cancelPdfForWordOcrAnalysis: (requestId) => safeSend?.('pdf-to-word-analyze-cancel', requestId),
+  extractOcrTextFromArea: (payload) => invokeOrReject('ocr-extract-area', payload),
+  cancelOcrAreaExtraction: (requestId) => invokeOrReject('ocr-extract-area-cancel', requestId),
+  searchPdfText: (payload) => invokeOrReject('ocr-search-document', payload),
+  cancelPdfTextSearch: (requestId) => safeSend?.('ocr-search-document-cancel', requestId),
+  preflightBatchFiles: (payload) => invokeOrReject('preflight-batch-files', payload),
   cancelOperation: (taskId) => invokeOrReject('cancel-operation', taskId),
   getQueueStatus: () => invokeOrReject('get-queue-status'),
   saveTempFile: (payload) => invokeOrReject('save-temp-file', payload),
@@ -55,9 +73,12 @@ contextBridge.exposeInMainWorld('api', {
   getFileInfo: (filePath) => invokeOrReject('get-file-info', filePath),
   copyText: (value) => invokeOrReject('copy-text', value),
   readFileBytes: (filePath) => invokeOrReject('read-file-bytes', filePath),
+  openPdfPreviewRangeSession: (filePath) => invokeOrReject('open-pdf-preview-range-session', filePath),
+  readPdfPreviewRange: (payload) => invokeOrReject('read-pdf-preview-range', payload),
+  closePdfPreviewRangeSession: (sessionId) => invokeOrReject('close-pdf-preview-range-session', sessionId),
   closeApp: () => invokeOrReject('close-app'),
   forceCloseApp: () => invokeOrReject('force-close-app'),
-  convertImageToTempPdf: (imagePath) => invokeOrReject('convert-image-to-temp-pdf', imagePath),
+  convertImageToTempPdf: (imagePath, sourceRotation = 0) => invokeOrReject('convert-image-to-temp-pdf', imagePath, sourceRotation),
   convertDocumentToTempPdf: (documentPath) => invokeOrReject('convert-document-to-temp-pdf', documentPath),
   reportStartupPhase: (phase, details) => safeSend?.('startup-phase', { phase, details }),
   logRendererError: (payload) => invokeOrReject('log-renderer-error', payload),
@@ -70,6 +91,16 @@ contextBridge.exposeInMainWorld('api', {
     return () => {
       safeRemoveListener?.('queue-status-updated', listener);
     };
+  },
+  onOcrAreaProgress: (callback) => {
+    const listener = (event, progress) => callback(progress);
+    safeOn?.('ocr-area-progress', listener);
+    return () => safeRemoveListener?.('ocr-area-progress', listener);
+  },
+  onOcrSearchProgress: (callback) => {
+    const listener = (event, progress) => callback(progress);
+    safeOn?.('ocr-search-progress', listener);
+    return () => safeRemoveListener?.('ocr-search-progress', listener);
   },
   onOperationFinished: (callback) => {
     const listener = (event, task) => callback(task);
@@ -84,6 +115,11 @@ contextBridge.exposeInMainWorld('api', {
     return () => {
       safeRemoveListener?.('app-close-requested', listener);
     };
+  },
+  onSystemAppearanceUpdated: (callback) => {
+    const listener = (event, appearance) => callback(appearance);
+    safeOn?.('system-appearance-updated', listener);
+    return () => safeRemoveListener?.('system-appearance-updated', listener);
   },
   onLaunchRequest: (callback) => {
     const listener = (event, payload) => callback(payload);
