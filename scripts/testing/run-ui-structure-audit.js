@@ -310,7 +310,7 @@ function runUiStructureAudit() {
       hasText(appJs, 'actionBar.classList.add("action-bar-settings--output-layout", "module-output-dock")') &&
       hasText(componentsHistoryCss, '.module-output-dock') &&
       hasText(componentsHistoryCss, 'position: fixed') &&
-      hasText(componentsHistoryCss, 'bottom: 14px') &&
+      (hasText(componentsHistoryCss, 'bottom: 14px') || hasText(componentsHistoryCss, 'bottom: max(14px, env(safe-area-inset-bottom, 0px))')) &&
       hasText(componentsHistoryCss, 'left: calc(var(--sidebar-width) + 30px)') &&
       hasText(componentsHistoryCss, 'display: flex') &&
       hasText(componentsHistoryCss, 'flex: 1 1 clamp(320px, 42%, 760px)') &&

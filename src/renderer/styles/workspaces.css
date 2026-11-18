@@ -1527,14 +1527,14 @@
 }
 
 #ocr-file-list-container .action-file-item {
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-card, #1e293b) 75%, transparent);
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-muted, #1e293b) 55%, transparent);
   transition: background-color var(--transition-fast);
 }
 
 #ocr-file-list-container .action-file-item:hover {
-  background: color-mix(in srgb, var(--bg-card, #1e293b) 95%, transparent);
+  background: color-mix(in srgb, var(--bg-muted, #1e293b) 85%, transparent);
 }
 
 .ocr-preview-controls {
@@ -1554,9 +1554,9 @@
   flex-wrap: nowrap;
   gap: 6px;
   padding: 4px 8px;
-  border: 1px solid var(--border-color);
+  border: 0;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-muted, #1e293b) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-muted, #1e293b) 55%, transparent);
   flex: 0 0 auto;
 }
 
@@ -1578,9 +1578,9 @@
   flex-wrap: nowrap;
   gap: 4px;
   padding: 4px 8px;
-  border: 1px solid var(--border-color);
+  border: 0;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-muted, #1e293b) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-muted, #1e293b) 55%, transparent);
   flex: 0 0 auto;
 }
 

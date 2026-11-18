@@ -300,11 +300,11 @@ input[type="checkbox"]:not(.page-selection-control input):disabled {
 .ocr-document-search[data-action-toolbar],
 .split-content-search[data-action-toolbar],
 .redact-search-row[data-action-toolbar] {
-  min-height: 46px;
-  padding: 5px;
-  border: 1px solid var(--border-color);
-  border-radius: 11px;
-  background: var(--bg-card);
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .ocr-document-search[data-action-toolbar] .input-group,

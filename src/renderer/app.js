@@ -2933,7 +2933,7 @@ function setupRecentFilesCards(uploadTools) {
       const diffMs = Math.max(0, Date.now() - modifiedAt.getTime());
       const diffHours = Math.floor(diffMs / 3600000);
       const ageInDays = Math.floor(diffMs / 86400000);
-      let ageLabel = "";
+      let ageLabel;
       if (diffHours < 1) ageLabel = "Agora há pouco";
       else if (diffHours < 24) ageLabel = `Hoje, ${modifiedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
       else if (ageInDays === 1) ageLabel = "Ontem";

@@ -42,7 +42,6 @@ export function createOcrAreaExtractor(deps) {
   let pageNumber = 1;
   let renderTask = null;
   let renderToken = 0;
-  let drawingEnabled = false;
   let dragStart = null;
   let selection = null;
   let activeRequestId = '';
@@ -182,7 +181,7 @@ export function createOcrAreaExtractor(deps) {
     }
   }
 
-  function cancelActiveRequest({ invalidate = true } = {}) {
+  function cancelActiveRequest({ invalidate: _invalidate = true } = {}) {
     cancelAutoExtractTimer();
     if (!activeRequestId) return;
     const requestId = activeRequestId;
@@ -281,7 +280,6 @@ export function createOcrAreaExtractor(deps) {
     let ownedTask = null;
     try {
       let loadedDoc = null;
-      let sessionOpened = false;
 
       if (windowApi.openPdfPreviewRangeSession) {
         try {
@@ -293,7 +291,6 @@ export function createOcrAreaExtractor(deps) {
           }
           if (preview?.sessionId && Number.isSafeInteger(preview.length) && preview.length > 0 && preview.initialData) {
             previewSessionId = ownedSessionId;
-            sessionOpened = true;
             const sessionId = ownedSessionId;
             const initialData = preview.initialData instanceof Uint8Array
               ? preview.initialData
@@ -454,7 +451,6 @@ export function createOcrAreaExtractor(deps) {
 
   function onPointerDown(event) {
     if (!pdfDocument || event.button !== 0) return;
-    drawingEnabled = true;
     const bounds = canvas.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
     event.preventDefault();
@@ -508,7 +504,6 @@ export function createOcrAreaExtractor(deps) {
       setStatus('Clique e arraste para desenhar o retângulo sobre o texto.');
       return;
     }
-    drawingEnabled = true;
     drawButton?.classList.add('is-active');
 
     const x = Math.max(0, Math.min(0.995, rawLeft));
@@ -543,7 +538,6 @@ export function createOcrAreaExtractor(deps) {
       selectionBox.style.height = '100%';
       selectionBox.classList.remove('hidden');
     }
-    drawingEnabled = true;
     drawButton?.classList.add('is-active');
     if (extractButton) extractButton.disabled = false;
     if (drawHint) drawHint.textContent = 'Página inteira selecionada. O reconhecimento foi iniciado automaticamente.';
@@ -772,7 +766,6 @@ export function createOcrAreaExtractor(deps) {
     }, { passive: false });
 
     drawButton?.addEventListener('click', () => {
-      drawingEnabled = true;
       drawButton.classList.add('is-active');
       clearSelection();
       if (drawHint) drawHint.textContent = 'Arraste o cursor sobre o texto que deseja reconhecer.';

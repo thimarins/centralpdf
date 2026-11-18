@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-09T20:35:00.281Z",
-  "signedFixtureType": "cms-detached-self-signed-v1",
-  "signedFixtureSha256": "6f7f8bdf957248995ae861cb6b966b08ce4b595d88d61c67383ca00ce7f675f1",
+  "generatedAt": "2026-11-18T00:21:09.728Z",
+  "signedFixtureType": "marker-only-fallback",
+  "signedFixtureSha256": "3dc31f2bfe26023eeb834a0101dfcf4e691a5fd5689eae1cfe5045c1d142d9db",
   "notes": [
     "Large virtual PDFs are sparse files used for limit and warning validation.",
     "protected-placeholder.pdf simulates a protected indicator but is not full encryption.",

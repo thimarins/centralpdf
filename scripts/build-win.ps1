@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Remove-PathWithRetry {
   param(
@@ -333,6 +333,16 @@ if (-not (Test-Path -LiteralPath $unpackedSourceDir)) {
 
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $latestDir -Force | Out-Null
+
+# Remove previous versioned artifacts to avoid accumulating redundant MSIs/exes
+Get-ChildItem -Path $distInstallerDir -Filter "*.msi" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $distInstallerDir -Filter "*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $releasesRoot -Directory -ErrorAction SilentlyContinue | Where-Object {
+  $_.Name -ne "latest" -and $_.Name -ne $releaseVersion
+} | ForEach-Object {
+  Remove-PathWithRetry -LiteralPath $_.FullName
+}
+
 Remove-FileIfExists -LiteralPath $latestMsiTarget
 Remove-FileIfExists -LiteralPath $latestPortableTarget
 Remove-FileIfExists -LiteralPath $latestManifestTarget
@@ -348,19 +358,17 @@ $latestUnpackedPublishedDir = Publish-UnpackedLatest -Source $unpackedSourceDir 
 $latestMsiFinalTarget = Try-CopyLatestArtifact -Source $msiSource -Destination $latestMsiTarget -PendingDestination $latestPendingMsiTarget
 $latestPortableFinalTarget = Try-CopyLatestArtifact -Source $portableSource -Destination $latestPortableTarget -PendingDestination $latestPendingPortableTarget
 
-# Copy to root and ScanAccess installer for fast access
+# Copy single latest MSI to ScanAccess installer for fast access without duplicates
 $rootMsi = Join-Path $repoRoot "Central-PDF-win-x64.msi"
-try {
-  Copy-FileWithRetry -Source $msiSource -Destination $rootMsi
-} catch {}
+Remove-FileIfExists -LiteralPath $rootMsi
 
 $scanAccessInstallerDir = "C:\ScanAccess\installer"
 if (Test-Path -LiteralPath $scanAccessInstallerDir) {
   try {
-    Copy-FileWithRetry -Source $msiSource -Destination (Join-Path $scanAccessInstallerDir ("Central PDF {0}.msi" -f $releaseVersion))
+    Get-ChildItem -Path $scanAccessInstallerDir -Filter "Central PDF *.msi" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    Remove-FileIfExists -LiteralPath (Join-Path $scanAccessInstallerDir "Central-PDF-Portable.exe")
     Copy-FileWithRetry -Source $msiSource -Destination (Join-Path $scanAccessInstallerDir "Central-PDF-win-x64.msi")
-    Copy-FileWithRetry -Source $portableSource -Destination (Join-Path $scanAccessInstallerDir "Central-PDF-Portable.exe")
-    Write-Host "Copiado para instalador centralizado: $scanAccessInstallerDir"
+    Write-Host "Copiado para instalador centralizado: $scanAccessInstallerDir\Central-PDF-win-x64.msi"
   } catch {}
 }
 Set-Content -LiteralPath $releasePortableMarker -Value "Portable disponível: $portableTarget" -Encoding UTF8

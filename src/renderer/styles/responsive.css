@@ -276,6 +276,7 @@
 
   .dashboard-recent-file-actions {
     grid-column: 2;
+    grid-row: auto;
     flex-wrap: wrap;
   }
 

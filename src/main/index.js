@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage } = require('electron');
 const { nativeTheme, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -36,7 +36,6 @@ const { isPrivateDocumentOperation, createPrivateOperationFailureMetrics, create
 const RECENT_UPLOAD_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const RECENT_UPLOAD_CACHE_MS = 8 * 1000;
 const RECENT_UPLOAD_SCAN_BUDGET_MS = 1800;
-const RECENT_UPLOAD_MAX_DIRECTORIES = 900;
 const RECENT_UPLOAD_MAX_FILES = 6000;
 const PDF_TO_WORD_ANALYSIS_MAX_BYTES = 64 * 1024 * 1024;
 const pdfPreviewRangeSessions = createPdfPreviewRangeSessions({
@@ -49,10 +48,6 @@ const pdfPreviewRangeSessions = createPdfPreviewRangeSessions({
 });
 const RECENT_UPLOAD_EXTENSIONS = new Set([
   '.pdf', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.docx', '.xlsx'
-]);
-const RECENT_UPLOAD_IGNORED_DIRECTORIES = new Set([
-  'appdata', 'application data', 'cache', 'caches', 'cookies', 'local settings',
-  'node_modules', 'recent', 'sendto', 'start menu', 'temp', 'temporary internet files'
 ]);
 let recentUploadFilesCache = { expiresAt: 0, files: [], pending: null };
 

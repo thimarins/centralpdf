@@ -5,7 +5,7 @@
 Central PDF é um utilitário corporativo para processamento local de documentos no Windows.
 Foi desenhado para operação offline, previsível, com baixa manutenção e sem dependência de cloud, serviços residentes ou backend remoto.
 
-Versão atual de fechamento da V1: `1.5`.
+Versão atual do pacote: `1.3.0`.
 
 ## Objetivos do Projeto
 
